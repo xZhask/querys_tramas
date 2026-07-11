@@ -98,11 +98,11 @@ SELECT
 	--   UCI/intensivos -> 99295 | intermedios -> 99305 | resto -> 99231
 	COALESCE(NULLIF(h.cpms_alta, ''),
 		CASE
-			WHEN cc.nombre ILIKE '%UCI%' OR cc.nombre ILIKE '%INTENSIV%' THEN '99295'
-			WHEN cc.nombre ILIKE '%INTERMEDI%' THEN '99305'
+			WHEN cc.descripcion ILIKE '%UCI%' OR cc.descripcion ILIKE '%INTENSIV%' THEN '99295'
+			WHEN cc.descripcion ILIKE '%INTERMEDI%' THEN '99305'
 			ELSE '99231'
 		END) AS cpms_alta,
-	cc.nombre AS clase_cama, -- trazabilidad del fallback aplicado
+	cc.descripcion AS clase_cama, -- trazabilidad del fallback aplicado
 	(h.fecha_alta_medica::date - COALESCE(h.fecha_atencion, h.fecha_ingreso, h.created_at)::date + 1) AS cantidad_cpms_estancia,
 	((h.fecha_alta_medica::date - COALESCE(h.fecha_atencion, h.fecha_ingreso, h.created_at)::date + 1) * pro.t_nivel3) AS sp_valorizacion_estancia
 
@@ -154,8 +154,8 @@ LEFT JOIN LATERAL (
 LEFT JOIN procedimientos pro ON pro.codigo =
 	COALESCE(NULLIF(h.cpms_alta, ''),
 		CASE
-			WHEN cc.nombre ILIKE '%UCI%' OR cc.nombre ILIKE '%INTENSIV%' THEN '99295'
-			WHEN cc.nombre ILIKE '%INTERMEDI%' THEN '99305'
+			WHEN cc.descripcion ILIKE '%UCI%' OR cc.descripcion ILIKE '%INTENSIV%' THEN '99295'
+			WHEN cc.descripcion ILIKE '%INTERMEDI%' THEN '99305'
 			ELSE '99231'
 		END)
 
