@@ -31,8 +31,8 @@
 -- ========================= CONFIGURAR PERÍODO AQUÍ =========================
 DROP TABLE IF EXISTS cfg_periodo;
 CREATE TABLE cfg_periodo AS
-SELECT DATE '2025-07-01' AS p_ini,   -- <== inicio del período (igual al paso 1)
-       DATE '2025-07-31' AS p_fin;   -- <== fin del período   (igual al paso 1)
+SELECT DATE '2024-01-01' AS p_ini,   -- <== inicio del período (igual al paso 1)
+       DATE '2024-01-31' AS p_fin;   -- <== fin del período   (igual al paso 1)
 -- ============================================================================
 
 
@@ -59,6 +59,16 @@ CREATE TABLE temp_hospitalizacion_local AS
 		(SELECT p_ini FROM cfg_periodo), (SELECT p_fin FROM cfg_periodo));
 
 -- (temp_emergencia_local NO se crea: emergencia CPT sin datos 2024+, CHECK 13a)
+
+
+-- 1.2 Estructura vacía de temp_emergencia_local (REQUERIDA aunque no se use):
+-- las funciones 03/04 la referencian dentro del mismo statement del CASE y
+-- PostgreSQL exige que exista físicamente aunque la rama nunca se ejecute
+-- (hallazgo del piloto julio 2025). Emergencia CPT no tiene datos 2024+,
+-- así que se crea vacía con la estructura del padrón SIGESAPOL.
+DROP TABLE IF EXISTS temp_emergencia_local;
+CREATE TABLE temp_emergencia_local AS
+	SELECT * FROM temp_emergencia_sigesapol_estancia LIMIT 0;
 
 
 -- ============================================================

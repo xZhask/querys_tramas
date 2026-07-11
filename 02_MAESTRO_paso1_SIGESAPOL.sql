@@ -18,8 +18,8 @@
 -- ========================= CONFIGURAR PERÍODO AQUÍ =========================
 DROP TABLE IF EXISTS cfg_periodo;
 CREATE TABLE cfg_periodo AS
-SELECT DATE '2025-07-01' AS p_ini,   -- <== inicio del período
-       DATE '2025-07-31' AS p_fin;   -- <== fin del período
+SELECT DATE '2024-01-01' AS p_ini,   -- <== inicio del período
+       DATE '2024-01-31' AS p_fin;   -- <== fin del período
 -- ============================================================================
 
 
@@ -115,7 +115,16 @@ SELECT
 	d3.nombre AS sp_descripcion_dx_03,
 
 	e.id as id_emergencia_sigesapol,
-	e.cpms_alta as cpms_alta,
+	-- CPMS de alta: el 22.5% viene vacío (check 26 del piloto). Fallback por
+	-- prioridad con LA MISMA convención del sistema legado ("UNITIC
+	-- regularizará"): prioridad I -> 99295 (UCI día-paciente),
+	-- II/III y demás -> 99231.15 (hosp. especializada continuada).
+	COALESCE(NULLIF(e.cpms_alta, ''),
+		CASE
+			WHEN pr.descripcion ILIKE 'I -%' OR pr.descripcion ILIKE 'I %' THEN '99295'
+			ELSE '99231.15'
+		END) as cpms_alta,
+	pr.descripcion AS prioridad_descripcion, -- trazabilidad del fallback
 	(date(e.fecha_alta_medica) - date(e.fecha_atencion) + 1) as cantidad_cpms_estancia
 
   FROM emergencias e
@@ -136,6 +145,7 @@ SELECT
   INNER JOIN profesiones prof on prof.id = m.id_profesion
   INNER JOIN especializaciones esp on esp.id = m.id_especializacion
   left join condiciones cond on cond.id = e.id_condi_egres_med
+  LEFT JOIN prioridades pr ON pr.id = e.id_prioridad -- para el fallback de CPMS
   LEFT JOIN diagnosticos d1 ON d1.id = e.id_diag_cab
   LEFT JOIN diagnosticos d2 ON d2.id = e.id_diag_cuer1
   LEFT JOIN diagnosticos d3 ON d3.id = e.id_diag_cuer2
@@ -153,6 +163,7 @@ m.tipo_documento, m.dni, m.paterno, m.materno, m.nombre,
 prof.nombre, esp.nombre,
 cond.codigo_salupol, e.estado, e.id_condi_egres_med,
 e.fecha_atencion, e.fecha_alta_medica,
+e.cpms_alta, pr.descripcion,
 e.id, a.id,
 d1.codigo, d1.nombre, d2.codigo, d2.nombre, d3.codigo, d3.nombre
 

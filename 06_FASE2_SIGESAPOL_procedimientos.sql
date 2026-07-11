@@ -1,24 +1,18 @@
 -- ============================================================================
--- 06_FASE2_SIGESAPOL_procedimientos.sql
--- Procedimientos desde SIGESAPOL (prestaciones + prestacion_procedimientos),
--- generalización de la query 09 a TODOS los tipos de atención del convenio.
+-- 06_FASE2_SIGESAPOL_procedimientos.sql  (VERSIÓN FINAL post-piloto julio 2025)
+-- Procedimientos desde SIGESAPOL (prestaciones + prestacion_procedimientos).
 -- Correr en la BD SIGESAPOL después del paso 1 (usa la misma cfg_periodo).
 --
--- Cambios respecto a la 09 original:
---   1. Período desde cfg_periodo (antes: fecha quemada).
---   2. Tres universos según el catálogo verificado (CHECK 19/20):
---        - Ambulatorio:      id_tipo_atencion IN (1, 5, 7)   [como la 09]
---        - Emergencia:       id_tipo_atencion = 2            [242 mil en alcance]
---        - Hospitalización:  id_tipo_atencion IN (3, 6, 8)   [hosp + nutricional + oncológico]
---   3. Incluye tipo_procedimiento 1 (médicos), 2 (laboratorio) y 3 (imágenes);
---      antes solo 1. La columna tipo_procedimiento sale en el resultado para
---      poder separarlos en el armado/Excel.
---   4. Joins de citas/consultorios pasados a LEFT: emergencia y hospitalización
---      no siempre tienen cita, el INNER los eliminaba.
---   5. Tipo de dx fijo en '2' (regla SALUDPOL: todo definitivo). Los códigos y
---      descripciones sí salen de la función de diagnósticos (PARCHE A aplicado:
---      sin anulados ni eliminados).
---   6. DROP IF EXISTS y verificación final.
+-- Incorpora la optimización validada en el piloto (de >9 min sin terminar a
+-- ~1 min 15 s / 212,789 filas):
+--   a) El pivot de diagnósticos ya NO llama a la función PL/pgSQL por fila:
+--      usa un join relacional a una subconsulta con ROW_NUMBER (Hash Join).
+--      La subconsulta CONSERVA los filtros del PARCHE A (estado = 1 y
+--      deleted_at IS NULL) y el orden determinístico por rd.id.
+--   b) El filtro de fecha es de rango puro, sin cast ::DATE, para usar el
+--      índice btree de prestaciones.fecha_atencion.
+-- Mantiene: 3 universos de atención, tipos de procedimiento 1/2/3,
+-- tipo de dx '2' fijo (regla SALUDPOL), joins LEFT de citas/consultorios.
 -- ============================================================================
 
 DO $$
@@ -100,14 +94,14 @@ SELECT
 
 	-- ===== DIAGNÓSTICOS (tipo fijo '2' por regla SALUDPOL) =====
 	'2'::varchar AS sp_tipo_dx_01,
-	max(CASE WHEN d1.orden = 1 THEN d1.codigo_diagnostico END) AS sp_codigo_dx_01,
-	max(CASE WHEN d1.orden = 1 THEN d1.descripcion_diagnostico END) AS sp_descripcion_dx_01,
+	max(CASE WHEN dx.orden = 1 THEN cie.codigo END) AS sp_codigo_dx_01,
+	max(CASE WHEN dx.orden = 1 THEN UPPER(regexp_replace(cie.nombre, '\r|\n|\t', '', 'g')) END) AS sp_descripcion_dx_01,
 	'2'::varchar AS sp_tipo_dx_02,
-	max(CASE WHEN d1.orden = 2 THEN d1.codigo_diagnostico END) AS sp_codigo_dx_02,
-	max(CASE WHEN d1.orden = 2 THEN d1.descripcion_diagnostico END) AS sp_descripcion_dx_02,
+	max(CASE WHEN dx.orden = 2 THEN cie.codigo END) AS sp_codigo_dx_02,
+	max(CASE WHEN dx.orden = 2 THEN UPPER(regexp_replace(cie.nombre, '\r|\n|\t', '', 'g')) END) AS sp_descripcion_dx_02,
 	'2'::varchar AS sp_tipo_dx_03,
-	max(CASE WHEN d1.orden = 3 THEN d1.codigo_diagnostico END) AS sp_codigo_dx_03,
-	max(CASE WHEN d1.orden = 3 THEN d1.descripcion_diagnostico END) AS sp_descripcion_dx_03,
+	max(CASE WHEN dx.orden = 3 THEN cie.codigo END) AS sp_codigo_dx_03,
+	max(CASE WHEN dx.orden = 3 THEN UPPER(regexp_replace(cie.nombre, '\r|\n|\t', '', 'g')) END) AS sp_descripcion_dx_03,
 
 	-- ===== PROCEDIMIENTOS =====
 	p2.codigo::varchar AS sp_codigo_procedimiento,
@@ -130,20 +124,21 @@ FROM prestaciones pre
 	LEFT JOIN prestacion_procedimientos pp ON pp.id_prestacion = pre.id
 	LEFT JOIN procedimientos p2 ON p2.id = pp.id_procedimiento
 	LEFT JOIN upsses upss ON upss.codigo = pre.codigo_upss
+
+	-- Diagnósticos: join relacional (optimización del piloto) CONSERVANDO
+	-- los filtros del PARCHE A y el orden determinístico por rd.id
 	INNER JOIN (
-		SELECT
-			rd.id_prestacion,
-			cie.codigo AS codigo_diagnostico,
-			UPPER(regexp_replace(cie.nombre, '\r|\n|\t', '', 'g')) as descripcion_diagnostico,
-			ROW_NUMBER() OVER(PARTITION BY rd.id_prestacion ORDER BY rd.id)::integer AS orden
+		SELECT rd.id_prestacion, rd.id_diagnostico,
+		       ROW_NUMBER() OVER (PARTITION BY rd.id_prestacion ORDER BY rd.id) AS orden
 		FROM receta_diagnosticos rd
-		INNER JOIN diagnosticos cie ON cie.id = rd.id_diagnostico
-		WHERE rd.estado = 1
-		  AND rd.deleted_at IS NULL
-	) d1 ON d1.id_prestacion = pre.id AND d1.orden <= 3
+		WHERE rd.estado = 1              -- solo diagnósticos activos (CHECK 10)
+		  AND rd.deleted_at IS NULL      -- sin eliminados lógicamente (CHECK 10)
+	) dx ON dx.id_prestacion = pre.id AND dx.orden <= 3
+	INNER JOIN diagnosticos cie ON cie.id = dx.id_diagnostico
 
 WHERE pre.id_tipo_atencion IN (1, 5, 7, 2, 3, 6, 8)
   AND p2.tipo_procedimiento IN (1, 2, 3)  -- médicos, laboratorio, imágenes
+  -- Rango puro, sin cast, para aprovechar el índice de fecha_atencion:
   AND pre.fecha_atencion >= (SELECT p_ini FROM cfg_periodo)
   AND pre.fecha_atencion <  (SELECT p_fin FROM cfg_periodo) + INTERVAL '1 day'
 
@@ -171,7 +166,4 @@ FROM temp_sigesapol_procedimientos
 GROUP BY base, tipo_procedimiento
 ORDER BY base, tipo_procedimiento;
 
--- NOTA 1: esta tabla también viaja a la BD CPT (mismo pg_dump) para la
---         deduplicación contra las BDT de CPT (archivo 07).
--- NOTA 2: la 09 original queda reemplazada por este script (su universo
---         ambulatorio está incluido con el mismo detalle).
+-- Esta tabla viaja a la BD CPT (pg_dump) para la deduplicación (archivo 07).

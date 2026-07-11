@@ -1,0 +1,169 @@
+
+SELECT --distinct
+	--DATOS PERSONALES
+	SUBSTRING(hc.numero_historia_clinica , 3, 6)as historia
+  , p.id_parentesco
+	, gr.descripcion_corta as grado_paciente
+	, tper.descripcion as situacion_paciente
+	, p.codigo_tipo_documento as tdoc_paciente --LLAVE
+	, CASE WHEN p.codigo_tipo_documento = 1 THEN SUBSTRING(p.numero_documento, 3, 8)
+		WHEN p.codigo_tipo_documento = 2 THEN SUBSTRING(p.numero_documento, 2, 9)
+		ELSE SUBSTRING(p.numero_documento, 2, 9) END as ndoc_paciente --LLAVE 
+	, ( case
+		when p.numero_hijo='00' then 'TITULAR_DNI' 
+			else 'HIJO(A)'
+			end
+		) as numero_hijo
+	, p.apellido_paterno as apepat_paciente
+	, p.apellido_materno as apemat_paciente
+	, p.nombres as nombre_paciente
+	, p.fecha_nacimiento AS fnacimiento_paciente	
+		, DATE_PART('year', age(p.fecha_nacimiento)) as edad
+		, DATE_PART('month', age(p.fecha_nacimiento)) as mes
+		, DATE_PART('day', age(p.fecha_nacimiento)) as dia
+	, p.codigo_genero as genero_paciente
+	, CASE WHEN p.id_parentesco = 1 THEN 1
+		WHEN p.id_parentesco = 9 THEN 3
+		ELSE 2 END AS condicion_asegurado
+	, par.descripcion as parentesco_paciente	
+	, CASE WHEN pcpt.origen = 'CONSULTA' THEN 1
+		WHEN pcpt.origen = 'ATENCION EN EMERGENCIA' THEN 2
+		WHEN pcpt.origen = 'HOSPITALIZACION' THEN 3 END AS tipo_atencion
+		
+	--DATOS UBIGEO
+	, (case when p.id_distrito is not null then SUBSTRING(dis.codigo, 1, 2) else SUBSTRING(disr.codigo, 1, 2) end ) as ubigeo_departamento	
+	, (case when p.id_distrito is not null then dep.descripcion else depa.descripcion end ) as departamento	
+	, (case when p.id_distrito is not null then SUBSTRING(dis.codigo, 3, 2) else SUBSTRING(disr.codigo, 3, 2) end ) as ubigeo_provincia
+	, (case when p.id_distrito is not null then prov.descripcion else provi.descripcion end ) as provincia		
+	, (case when p.id_distrito is not null then SUBSTRING(dis.codigo, 5, 2) else SUBSTRING(disr.codigo, 5, 2) end ) as ubigeo_distrito
+	, (case when p.id_distrito is not null then dis.descripcion else disr.descripcion end ) as distrito	
+	
+	--DATOS IPRESS			
+	, TRIM('00013591') AS codigo_ipress -- LLAVE
+	, TRIM('HOSPITAL NACIONAL LUIS N SAENZ PNP') AS nombre_ipress --LLAVE.
+	,( case when pcpt.condicion_cpt_ipress='N' then 'NUEVO' 
+		when pcpt.condicion_cpt_ipress='C' then 'CONTINUADOR'
+		when pcpt.condicion_cpt_ipress='R' then 'REINGRESO' 
+			end) as condicion_ipress
+
+	--DATOS SERVICIO
+	, COALESCE(div.descripcion, '') as division_hcentral
+	, COALESCE(deph.descripcion, '') as departamento_hcentral		
+	, COALESCE(shc.upss, '') as upss_servicio
+	, COALESCE(shc.descripcion, '') as servicio_hcentral
+	 ,( case when pcpt.condicion_cpt_upss='N' then 'NUEVO' 
+		 when pcpt.condicion_cpt_upss='C' then 'CONTINUADOR'
+		 when pcpt.condicion_cpt_upss='R' then 'REINGRESO' 
+		 end) as condicion_servicio		
+	, pcpt.fecha_consulta as fecha_atencion --LLAVE
+	, CAST(null AS DATE) as fecha_alta  -- LLAVE
+
+	--DATOS MEDICOS
+	, m.tipo_contrato
+	, CASE WHEN parm.id_parentesco = 1 THEN grm.descripcion_corta
+		ELSE NULL END AS grado	
+	, CASE WHEN parm.id_parentesco = 1 THEN tperm.descripcion
+		ELSE NULL END AS situacion_med
+		
+	, pm.codigo_tipo_documento as tdoc_responsable_atencion  --LLAVE
+	, CASE WHEN pm.codigo_tipo_documento = 1 THEN SUBSTRING(pm.numero_documento, 3, 8)
+		WHEN pm.codigo_tipo_documento = 2 THEN SUBSTRING(pm.numero_documento, 2, 9)
+		ELSE SUBSTRING(pm.numero_documento, 2, 9) END as ndoc_responsable_atencion  --LLAVE
+	, pm.apellido_paterno as apepat_responsable_atencion
+	, pm.apellido_materno as apemat_responsable_atencion
+	, pm.nombres as nombre_responsable_atencion
+	, m.numero_colegio_medico
+	, m.rne
+	--PROFESION_GENERAL
+	,(CASE WHEN m.id_profesion='92' THEN '01' 
+		WHEN m.id_profesion='30' THEN '02' 
+		WHEN m.id_profesion='28' THEN '03' 
+		WHEN m.id_profesion='18' THEN '04' 
+		WHEN m.id_profesion='189' THEN '05' 
+		WHEN m.id_profesion='434' THEN '06' 
+		WHEN m.id_profesion='29' THEN '07' 
+		WHEN m.id_profesion='438' THEN '09' 
+		WHEN m.id_profesion='77' THEN '10' 	
+		WHEN m.id_profesion <> ALL (ARRAY[92, 30, 28, 17, 189, 434, 29, 438, 77, 18]) THEN '00'
+            ELSE NULL
+		END) as prof_responsable_atencion -- LLAVE
+
+	, CASE WHEN pcpt.origen IN ('ATENCION EN EMERGENCIA','HOSPITALIZACION') THEN
+			CASE 
+		WHEN m.especialidad_medico = 'OBSTETRA' OR m.id_especialidad_med = 391 THEN '00'
+                ELSE '01'
+		END
+		ELSE ''
+		END AS especialidad_responsable_atencion -- LLAVE
+
+	--DATOS MEDICOS QUE SOLICTARON RX
+	, pmrx.codigo_tipo_documento as tdoc_solicito_rx  --LLAVE
+	, CASE WHEN pmrx.codigo_tipo_documento = 1 THEN SUBSTRING(pmrx.numero_documento, 3, 8)
+		WHEN pmrx.codigo_tipo_documento = 2 THEN SUBSTRING(pmrx.numero_documento, 2, 9)
+		ELSE SUBSTRING(pmrx.numero_documento, 2, 9) END as ndoc_solicito_rx  
+	, pmrx.apellido_paterno as apepat_solicito_rx
+	, pmrx.apellido_materno as apemat_solicito_rx
+	, pmrx.nombres as nombre_solicito_rx
+ 	, prcpt.codigo_alta  AS circunstancia_alta
+
+	,(CASE when dcpt.tipo_diagnostico_cpt = 'P - PRESUNTIVO' then '1' 
+		when dcpt.tipo_diagnostico_cpt = 'D - DEFINITIVO' then '2'
+		when dcpt.tipo_diagnostico_cpt = 'R - REPETITIVO' then '3' end) as tipo_diagnostico
+	, c.codigo as codigo_diagnostico
+	, UPPER(c.descripcion) as descripcion_diagnostico
+	, COALESCE(c2.cod_cpt, '') as codigo_procedimiento
+	, COALESCE(UPPER(c2.descripcioncpt), '') as descripcion_procedimiento
+	, SUM(COALESCE(prcpt.cantidad_registro, 1)) as suma_cantidad_registro
+	, c2.nivel_3 as valorizacion
+	, C2.estado
+	, pu.apellido_paterno || ' '||  pu.apellido_materno || ' '||  pu.nombres as DIGITADOR
+	, pcpt.fecha_registro
+	, pcpt.hora_registro
+	
+FROM prestacion_cpt pcpt
+	INNER JOIN persona p on pcpt.id_persona = p.id_persona		
+		INNER JOIN medico m on m.codigo_medico = pcpt.codigo_medico	
+	INNER JOIN persona pm ON m.id_persona = pm.id_persona	
+		LEFT JOIN titular titum on titum.id_titular=pm.id_titular
+	LEFT JOIN historia_clinica hc ON p.id_persona = hc.id_persona
+
+		LEFT JOIN grado grm on grm.id_grado=titum.id_grado
+	LEFT JOIN tipo_persona tperm on tperm.id_tipo_persona=titum.id_tipo_persona
+		LEFT JOIN parentesco parm on parm.id_parentesco=pm.id_parentesco	
+
+	LEFT JOIN medico mrx on mrx.codigo_medico = pcpt.codigo_medico_rayosx
+		LEFT JOIN persona pmrx ON mrx.id_persona = pmrx.id_persona
+	inner join usuario u on u.codigo_usuario=pcpt.codigo_usuario
+		inner join persona pu on u.id_persona=pu.id_persona	
+	INNER JOIN diagnostico_cpt dcpt ON pcpt.id_prestacion_cpt = dcpt.id_prestacion_cpt AND dcpt.estado = 'N'
+		INNER JOIN cie10 c ON c.id_cie10 = dcpt.id_cie10
+	LEFT JOIN procedimiento_cpt prcpt ON dcpt.id_diagnostico_cpt = prcpt.id_diagnostico_cpt
+		INNER JOIN cpt c2 ON prcpt.id_cpt = c2.id_cpt
+	LEFT JOIN servicio_hcentral shc ON pcpt.id_servicio_hcentral = shc.id_servicio
+		LEFT JOIN departamento_hcentral deph on deph.id_dep_hcentral=shc.id_dep_hcentral
+	LEFT JOIN division_hcentral div on div.id_div_hcentral=deph.id_div_hcentral
+		LEFT JOIN parentesco par on par.id_parentesco=p.id_parentesco	
+	LEFT JOIN titular titu on titu.id_titular=p.id_titular
+		LEFT JOIN tipo_persona tper on tper.id_tipo_persona=titu.id_tipo_persona
+	LEFT JOIN grado gr on gr.id_grado=titu.id_grado
+		LEFT JOIN distrito dis on dis.id_distrito = p.id_distrito
+	LEFT JOIN provincia prov on prov.id_provincia = dis.id_provincia
+		LEFT JOIN departamento dep on dep.id_departamento = prov.id_departamento
+	LEFT JOIN distrito disr on disr.id_distrito = p.id_distrito_referencial
+		LEFT JOIN provincia provi on provi.id_provincia = disr.id_provincia
+	LEFT JOIN departamento depa on depa.id_departamento = provi.id_departamento
+
+ 
+WHERE 	pcpt.fecha_consulta>='20230201'
+	and pcpt.fecha_consulta< '20230301'
+	AND pcpt.estado = 'N' 
+	AND c2.cod_cpt not in('99231','99295','99235','99305')
+
+GROUP BY pcpt.id_prestacion_cpt, p.codigo_tipo_documento, p.numero_documento, p.apellido_paterno, p.apellido_materno, p.nombres, p.fecha_nacimiento, p.codigo_genero, p.id_parentesco, pcpt.origen, shc.upss
+, pcpt.fecha_consulta, pm.codigo_tipo_documento	, pm.numero_documento, pm.apellido_paterno, pm.apellido_materno, pm.nombres, m.id_profesion, pcpt.origen, m.especialidad_medico, dcpt.tipo_diagnostico_cpt, c.codigo
+, c.descripcion, c2.cod_cpt, c2.descripcioncpt, prcpt.cantidad_registro, c2.nivel_3,shc.descripcion, div.descripcion, deph.descripcion,pmrx.codigo_tipo_documento,pmrx.numero_documento,pmrx.apellido_paterno
+, pmrx.apellido_materno,pmrx.nombres,pu.apellido_paterno,pu.apellido_materno,pu.nombres,par.descripcion, tper.descripcion,gr.descripcion_corta,pcpt.fecha_registro,pcpt.hora_registro,dis.descripcion,disr.descripcion
+, prov.descripcion,provi.descripcion,dep.descripcion,depa.descripcion,p.id_distrito,disr.codigo,dis.codigo, m.numero_colegio_medico,m.rne,m.tipo_contrato,grm.descripcion_corta,titum.id_titular,tperm.descripcion,C2.estado
+, parm.id_parentesco,hc.numero_historia_clinica, prcpt.codigo_alta,m.id_especialidad_med, p.numero_hijo
+
+ORDER BY pcpt.fecha_consulta,pcpt.origen,p.numero_documento

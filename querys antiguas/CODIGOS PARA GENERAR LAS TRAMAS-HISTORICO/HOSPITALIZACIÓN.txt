@@ -1,0 +1,92 @@
+
+SELECT
+	  CASE WHEN p.codigo_tipo_documento = 1 THEN SUBSTRING(p.numero_documento, 3, 8)
+		WHEN p.codigo_tipo_documento = 2 THEN SUBSTRING(p.numero_documento, 2, 9)
+		ELSE SUBSTRING(p.numero_documento, 2, 9) END AS ndoc_paciente
+	, CASE WHEN p.id_parentesco = 1 THEN 1
+		WHEN p.id_parentesco = 9 THEN 3
+		ELSE 2 END AS condicion_asegurado
+	, p.codigo_genero as genero_paciente
+	,r.fecha_ingreso as ingreso
+	,r.fecha_egreso as egreso
+	,r.codigo_alta
+
+	, CASE WHEN pm.codigo_tipo_documento = 1 THEN SUBSTRING(pm.numero_documento, 3, 8)
+		WHEN pm.codigo_tipo_documento = 2 THEN SUBSTRING(pm.numero_documento, 2, 9)
+		ELSE SUBSTRING(pm.numero_documento, 2, 9) END as ndoc_responsable_atencion 
+
+	,(CASE WHEN m.id_profesion='92' THEN '01' 
+		WHEN m.id_profesion='30' THEN '02' 
+		WHEN m.id_profesion='28' THEN '03' 
+		WHEN m.id_profesion='18' THEN '04' 
+		WHEN m.id_profesion='189' THEN '05' 
+		WHEN m.id_profesion='434' THEN '06' 
+		WHEN m.id_profesion='29' THEN '07' 
+		WHEN m.id_profesion='438' THEN '09' 
+		WHEN m.id_profesion='77' THEN '10' 	
+		WHEN m.id_profesion  ALL (ARRAY[92, 30, 28, 17, 189, 434, 29, 438, 77, 18]) THEN '00'
+            ELSE NULL
+		END) as prof_responsable_atencion
+
+	, COALESCE(s.upss, '') as upss_servicio
+	, COALESCE(s.descripcion, '') as upss_descripcion
+	, c1.codigo as cod_dx_01
+	, UPPER(c1.descripcion) AS descripcion_dx_01
+	, c2.codigo as cod_dx_02
+	, UPPER(c2.descripcion) AS descripcion_dx_02
+	, c3.codigo as cod_dx_03
+	, UPPER(c3.descripcion) AS descripcion_dx_03
+	, x.cod_cpt AS CODIGO_CPT
+	, x.descripcioncpt AS DESCRIPCION_CPT	
+
+FROM prestacion_cpt t
+	INNER JOIN persona p on t.id_persona = p.id_persona
+		
+		INNER JOIN medico m on m.codigo_medico = t.codigo_medico	
+	INNER JOIN persona pm ON m.id_persona = pm.id_persona	
+
+INNER JOIN diagnostico_cpt d ON t.id_prestacion_cpt = D.id_prestacion_cpt AND D.estado = 'N'
+			INNER JOIN cie10 c1 ON 
+				(SELECT diag1.id_cie10 FROM (SELECT ROW_NUMBER() OVER(ORDER BY d1.id_diagnostico_cpt) AS orden, d1.id_cie10
+					FROM diagnostico_cpt d1 
+					WHERE t.id_prestacion_cpt = d1.id_prestacion_cpt AND d1.estado='N') diag1 
+				WHERE diag1.orden = 1) = c1.id_cie10
+							
+			LEFT JOIN cie10 c2 ON 
+				(SELECT diag1.id_cie10 FROM (SELECT ROW_NUMBER() OVER(ORDER BY d1.id_diagnostico_cpt) AS orden, d1.id_cie10
+					FROM diagnostico_cpt d1 
+					WHERE t.id_prestacion_cpt = d1.id_prestacion_cpt) diag1 
+				WHERE diag1.orden = 2) = c2.id_cie10
+
+			LEFT JOIN cie10 c3 ON 
+				(SELECT diag1.id_cie10 FROM (SELECT ROW_NUMBER() OVER(ORDER BY d1.id_diagnostico_cpt) AS orden, d1.id_cie10
+					FROM diagnostico_cpt d1 
+					WHERE t.id_prestacion_cpt = d1.id_prestacion_cpt) diag1 
+				WHERE diag1.orden = 3) = c3.id_cie10
+		INNER join procedimiento_cpt r on d.id_diagnostico_cpt=r.id_diagnostico_cpt	
+	INNER join cpt x on x.id_cpt=r.id_cpt
+INNER JOIN servicio_hcentral s ON t.id_servicio_hcentral = s.id_servicio
+
+WHERE r.fecha_egreso='20230101' AND r.fecha_egreso '20230201'
+
+GROUP BY 
+p.codigo_tipo_documento 
+,p.numero_documento
+,p.id_parentesco
+,r.fecha_ingreso
+,r.fecha_egreso
+,c1.codigo
+,c1.descripcion
+,c2.codigo
+,c2.descripcion
+,c3.codigo
+,c3.descripcion
+,x.cod_cpt
+,x.descripcioncpt	
+,s.upss
+,s.descripcion
+,pm.codigo_tipo_documento
+,pm.numero_documento
+,m.id_profesion
+,r.codigo_alta
+,p.codigo_genero

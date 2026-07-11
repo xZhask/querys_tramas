@@ -81,9 +81,28 @@ pg_dump -U postgres -d sigesapol_junio -t temp_emergencia_sigesapol_estancia -t 
 
 Julio 2025 es el candidato ideal para el piloto: si ya fue reportado con el método antiguo, compara contra ese Excel; los reportes B.1/B.2 del archivo 07 además te cuantifican el doble registro de ese mes — insumo directo para el informe a jefatura y la auditoría posterior.
 
+## Reglas de deduplicación (FINALES, validadas con el piloto julio 2025)
+
+| Tipo | Duplicado automático (se descarta del complemento) | Hoja "OBSERVACIONES DUPLICADOS" (decide auditoría) |
+|---|---|---|
+| 1 — Proc. médicos | paciente + fecha + código + **mismo médico** | mismo par con médico distinto → motivo "MEDICO DISTINTO ENTRE FUENTES" |
+| 2 — Laboratorio y 3 — Imágenes | paciente + fecha + código + **misma cantidad** (médico ignorado: CPT firma el validador del servicio, SIGESAPOL el tratante — verificado) | mismo par con cantidad distinta → motivo "CANTIDAD DISTINTA ENTRE FUENTES" |
+| Estancias | documento + solapamiento de fechas | — |
+
+## Fallbacks de CPMS de estancia (por vacíos de origen verificados)
+
+- **Emergencias** (22.5% de `cpms_alta` vacío): prioridad I → `99295`, resto → `99231.15` — la misma convención del sistema legado ("UNITIC regularizará"). Aplicado en el paso 1.
+- **Hospitalizaciones** (100% vacío): por clase de cama — UCI/intensivos → `99295`, intermedios → `99305`, resto → `99231`. Aplicado en el archivo 05, con columna `clase_cama` para trazabilidad. Tarifas verificadas en `procedimientos.t_nivel3`.
+
+## Ajustes incorporados tras el piloto
+
+- Script 06 reescrito con la optimización validada (join relacional de diagnósticos + filtro de fecha sin cast: de >9 min a ~1 min 15 s), **conservando** los filtros de anulados/eliminados y el orden determinístico.
+- El maestro paso 2 crea automáticamente la estructura vacía `temp_emergencia_local` (dependencia física de las funciones 03/04 aunque la rama no se ejecute).
+- La deduplicación ahora incluye las tablas de **laboratorio de CPT** (ausentes en la primera versión del cruce).
+
 ## Pendientes abiertos
 
-1. Confirmar con el equipo el mecanismo de traslado usado en producción (o adoptar el pg_dump de arriba como estándar).
-2. Verificar en el primer mes: `sin_medico` de la 10-bis (si sale alto, cambiar el join al patrón users→medicos), y el formato de documentos en el cruce de deduplicación (nota final del archivo 07).
-3. La query 10 de emergencias no filtra establecimiento; el archivo 06 sí (vía historia LNS = '76'). Si el volumen de emergencias parece alto para un solo hospital, confirmar si el padrón debe filtrar por establecimiento LNS.
-4. Trama 2 directa en SQL (elimina el despivoteo en Excel) — mejora opcional, pedirla cuando quieras.
+1. Confirmar con el equipo el mecanismo de traslado entre bases en producción (mientras tanto: el pg_dump documentado arriba).
+2. Elevar al equipo/dirección: los 78 códigos sin tarifa en CPT (check 28) y el no-llenado de `cpms_alta` en los módulos de SIGESAPOL (para que la corrección venga de origen).
+3. Fix permanente sugerido para las funciones 03/04 de CPT: refactor de `WHERE CASE` a `IF/ELSIF` con un `RETURN QUERY` por rama (elimina la dependencia fantasma y mejora índices). No urgente: el workaround ya está en el maestro.
+4. Trama 2 directa en SQL (elimina el despivoteo en Excel) — mejora opcional a pedido.

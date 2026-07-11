@@ -92,13 +92,27 @@ SELECT
 	COALESCE(d3.nombre,  fdx.descripcion_dx_03) AS sp_descripcion_dx_03,
 
 	h.id AS id_hospitalizacion_sigesapol,
-	h.cpms_alta AS cpms_alta,
+	-- CPMS de estancia: cpms_alta viene VACÍO en el 100% de hospitalizaciones
+	-- (hallazgo del piloto). Fallback por clase de cama, con tarifas
+	-- verificadas en procedimientos.t_nivel3:
+	--   UCI/intensivos -> 99295 | intermedios -> 99305 | resto -> 99231
+	COALESCE(NULLIF(h.cpms_alta, ''),
+		CASE
+			WHEN cc.nombre ILIKE '%UCI%' OR cc.nombre ILIKE '%INTENSIV%' THEN '99295'
+			WHEN cc.nombre ILIKE '%INTERMEDI%' THEN '99305'
+			ELSE '99231'
+		END) AS cpms_alta,
+	cc.nombre AS clase_cama, -- trazabilidad del fallback aplicado
 	(h.fecha_alta_medica::date - COALESCE(h.fecha_atencion, h.fecha_ingreso, h.created_at)::date + 1) AS cantidad_cpms_estancia,
 	((h.fecha_alta_medica::date - COALESCE(h.fecha_atencion, h.fecha_ingreso, h.created_at)::date + 1) * pro.t_nivel3) AS sp_valorizacion_estancia
 
 FROM hospitalizaciones h
 LEFT JOIN asegurados a ON a.id = h.id_asegurado
 INNER JOIN establecimientos es ON es.id = h.id_establecimiento
+
+-- Cama activa para derivar la clase (id_cama_egreso viene NULL, piloto):
+LEFT JOIN camas cam ON cam.id = h.id_cama
+LEFT JOIN clase_camas cc ON cc.id = cam.id_clase_cama
 
 -- Médico de alta: hospitalizaciones tiene id_medico_alta (medicos.id) e
 -- id_user_alta (users.id). Se prioriza el vínculo directo a medicos;
@@ -136,8 +150,14 @@ LEFT JOIN LATERAL (
 	WHERE rn <= 3
 ) fdx ON h.id_diag_cab IS NULL
 
--- Tarifa del CPMS de alta para valorizar la estancia
-LEFT JOIN procedimientos pro ON pro.codigo = h.cpms_alta
+-- Tarifa del CPMS de estancia EFECTIVO (con el mismo fallback de arriba)
+LEFT JOIN procedimientos pro ON pro.codigo =
+	COALESCE(NULLIF(h.cpms_alta, ''),
+		CASE
+			WHEN cc.nombre ILIKE '%UCI%' OR cc.nombre ILIKE '%INTENSIV%' THEN '99295'
+			WHEN cc.nombre ILIKE '%INTERMEDI%' THEN '99305'
+			ELSE '99231'
+		END)
 
 WHERE h.fecha_alta_medica IS NOT NULL
   AND h.estado IN (6, 7)  -- válidas según CHECK 17

@@ -1,0 +1,80 @@
+select 
+  ate.secuencia
+  ,ate.prioridad 
+  ,SUBSTRING(per.numero_documento, 3, 10)  AS numero_doc
+ 	,per.apellido_paterno || ' '||  per.apellido_materno || ' '||  per.nombres AS nombre_paciente
+	,per.fecha_nacimiento
+  ,per.codigo_genero AS genero_paciente
+
+  ,CASE 
+    WHEN per.id_parentesco IN ('8','7','6','5','4','3','2') THEN 2
+    WHEN per.id_parentesco = 9 THEN 3
+    ELSE 1 END AS condicion_asegurado
+	,ate.fecha_ingreso as fecha_atencion
+	,ate.fecha_egreso AS fecha_alta
+  ,SUBSTRING(pm.numero_documento, 3, 10)  AS numero_doc_prof
+  , per.apellido_paterno || ' '||  per.apellido_materno || ' '||  per.nombres AS nombre_profesional
+
+  	,(CASE WHEN m.id_profesion='92' THEN '01' 
+		WHEN m.id_profesion='30' THEN '02' 
+		WHEN m.id_profesion='28' THEN '03' 
+		WHEN m.id_profesion='18' THEN '04' 
+		WHEN m.id_profesion='189' THEN '05' 
+		WHEN m.id_profesion='434' THEN '06' 
+		WHEN m.id_profesion='29' THEN '07' 
+		WHEN m.id_profesion='438' THEN '09' 
+		WHEN m.id_profesion='77' THEN '10' 	
+		WHEN m.id_profesion <> ALL (ARRAY[92, 30, 28, 17, 189, 434, 29, 438, 77, 18]) THEN '00'
+            ELSE NULL
+		END) AS prof_responsable_atencion
+  ,des.descripcion
+  ,c1.codigo
+  ,c1.descripcion
+  	,( case
+		when ate.prioridad<>'I - GRAVEDAD SÚBITA EXTREMA' then '99231' else '99295' 
+		end
+	) AS CODIGO_CPT
+
+	,( case
+		when ate.prioridad<>'I - GRAVEDAD SÚBITA EXTREMA' then 'ATENCION PACIENTE-DIA HOSPITALIZACION CONTINUADA'
+		else 'ATENCION EN UNIDAD DE CUIDADOS INTENSIVOS, DIA PACIENTE'
+		end
+	) AS descripcion_CPT
+
+ 	, pue.apellido_paterno || ' '||  pue.apellido_materno || ' '||  pue.nombres as digitador_egreso
+
+
+  FROM atencion_emergencia ate
+  INNER JOIN persona per ON ate.id_persona=per.id_persona
+	    INNER JOIN usuario ue on ue.codigo_usuario=ate.codigo_usuario_egreso
+  
+  		INNER JOIN persona pue on ue.id_persona=pue.id_persona
+
+	INNER JOIN medico m on m.codigo_medico = ate.codigo_medico	
+	    INNER JOIN persona pm ON m.id_persona = pm.id_persona	
+  INNER JOIN diagnostico dx ON dx.id_atencion_emergencia=ate.id_atencion_emergencia
+      INNER JOIN cie10 c1 ON c1.id_cie10=dx.id_cie10
+  INNER JOIN destino des ON des.id_destino=ate.id_destino
+
+  WHERE ate.fecha_egreso>='20230201' AND ate.fecha_egreso<'20230301'
+  --AND per.id_parentesco=9
+
+GROUP BY 
+   ate.secuencia
+  ,ate.prioridad 
+  ,numero_doc
+  ,nombre_paciente
+  ,per.fecha_nacimiento
+  ,per.codigo_genero
+  ,condicion_asegurado
+  ,ate.fecha_ingreso
+  ,ate.fecha_egreso
+  ,numero_doc_prof
+  ,nombre_profesional
+  ,prof_responsable_atencion
+  ,des.descripcion
+  ,c1.codigo
+  ,c1.descripcion
+  ,CODIGO_CPT
+  ,descripcion_CPT
+  ,digitador_egreso
