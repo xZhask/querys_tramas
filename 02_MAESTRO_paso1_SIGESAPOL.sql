@@ -124,6 +124,7 @@ SELECT
 			WHEN pr.descripcion ILIKE 'I -%' OR pr.descripcion ILIKE 'I %' THEN '99295'
 			ELSE '99231.15'
 		END) as cpms_alta,
+	(COALESCE(e.cpms_alta, '') = '') AS es_cpms_derivado, -- true = código derivado por prioridad
 	pr.descripcion AS prioridad_descripcion, -- trazabilidad del fallback
 	(date(e.fecha_alta_medica) - date(e.fecha_atencion) + 1) as cantidad_cpms_estancia
 

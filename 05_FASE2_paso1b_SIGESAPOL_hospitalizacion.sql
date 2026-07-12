@@ -102,6 +102,7 @@ SELECT
 			WHEN cc.descripcion ILIKE '%INTERMEDI%' THEN '99305'
 			ELSE '99231'
 		END) AS cpms_alta,
+	(COALESCE(h.cpms_alta, '') = '') AS es_cpms_derivado, -- true = código derivado por clase de cama
 	cc.descripcion AS clase_cama, -- trazabilidad del fallback aplicado
 	(h.fecha_alta_medica::date - COALESCE(h.fecha_atencion, h.fecha_ingreso, h.created_at)::date + 1) AS cantidad_cpms_estancia,
 	((h.fecha_alta_medica::date - COALESCE(h.fecha_atencion, h.fecha_ingreso, h.created_at)::date + 1) * pro.t_nivel3) AS sp_valorizacion_estancia
