@@ -27,7 +27,7 @@
 -- ==================== CONFIGURAR FUENTE CANÓNICA AQUÍ ======================
 DROP TABLE IF EXISTS cfg_canonico;
 CREATE TABLE cfg_canonico AS
-SELECT 'CPT'::text AS fuente;   -- <== 'CPT' (jul-sep 2025) | 'SIGESAPOL' (oct-dic 2025)
+SELECT 'SIGESAPOL'::text AS fuente;   -- <== 'CPT' (jul-sep 2025) | 'SIGESAPOL' (oct-dic 2025)
 -- ============================================================================
 
 DO $$
