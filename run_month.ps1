@@ -25,8 +25,8 @@ $env:PGPASSWORD = "root"
 $psqlPath = "C:\Program Files\PostgreSQL\18\bin\psql.exe"
 $pgdumpPath = "C:\Program Files\PostgreSQL\18\bin\pg_dump.exe"
 
-$expPath = "C:\Users\Intel\Downloads\QUERIES LNS\expedientes\$Year-$MonthPad"
-$tramaPath = "C:\Users\Intel\Downloads\QUERIES LNS\tramas_exportadas\$Year-$MonthPad"
+$expPath = "$PSScriptRoot\expedientes\$Year-$MonthPad"
+$tramaPath = "$PSScriptRoot\tramas_exportadas\$Year-$MonthPad"
 
 New-Item -ItemType Directory -Force -Path $expPath | Out-Null
 New-Item -ItemType Directory -Force -Path $tramaPath | Out-Null
@@ -118,6 +118,13 @@ $content08 = $content08 -replace "SELECT '[^']+'::text AS fuente;", "SELECT '$ca
 
 & $psqlPath -U postgres -d db_cpt_junio26 -f $file08 > "$expPath/resumen_consolidacion.txt"
 $perf["consolidacion"] = [Math]::Round(((Get-Date) - $t0).TotalSeconds, 2)
+
+# Reclasificar emergencias > 24 horas y unión de estancias
+$t0_rec = Get-Date
+Write-Output "Ejecutando 12_RECLASIFICAR_emergencias_24h.sql..."
+$file12 = "12_RECLASIFICAR_emergencias_24h.sql"
+& $psqlPath -U postgres -d db_cpt_junio26 -f $file12 | Out-Null
+$perf["reclasificacion_24h"] = [Math]::Round(((Get-Date) - $t0_rec).TotalSeconds, 2)
 
 # 9. Ejecutar Control de Integridad (Script 04) y exportar Control 5
 $t0 = Get-Date

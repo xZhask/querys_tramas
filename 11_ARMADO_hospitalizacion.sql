@@ -198,3 +198,121 @@ laboratorio.id_prestacion_laboratorio::text as id_prestacion_laboratorio
 	
 	  ORDER BY sp_fecha_atencion, e.sp_apellido_paterno_paciente, e.sp_apellido_materno_paciente, e.sp_nombres_paciente, sp_suma_cantidad desc
 )
+
+UNION ALL
+
+(
+SELECT 
+'procedimientos en hospitalización RECLASIFICADOS'::text as base,
+e.sp_tipo_documento_paciente, e.sp_numero_documento_paciente, 
+       e.sp_apellido_paterno_paciente, e.sp_apellido_materno_paciente, e.sp_nombres_paciente, 
+       e.sp_fecha_nacimiento, e.sp_genero_paciente, e.sp_condicion_asegurado, e.sp_tipo_atencion, 
+       e.sp_codigo_ipress, e.sp_nombre_ipress, e.sp_fecha_atencion, e.sp_fecha_alta, 
+       e.sp_tipo_documento_responsable, e.sp_numero_documento_responsable, 
+       e.sp_apellido_paterno_responsable, e.sp_apellido_materno_responsable, e.sp_nombres_responsable, 
+       e.sp_profesion_responsable, e.sp_especialidad_responsable, 
+       e.sp_circunstancia_alta, 
+       e.sp_upss_codigo, 
+       regexp_replace(e.sp_upss_descripcion, '\r|\n', '', 'g') as sp_upss_descripcion,
+       '1' AS hospitalizacion,
+-- Diagnósticos
+e.sp_tipo_dx_01,
+e.sp_codigo_dx_01,
+regexp_replace(e.sp_descripcion_dx_01, '\r|\n|\t', '', 'g') as sp_descripcion_dx_01,
+e.sp_tipo_dx_02,
+e.sp_codigo_dx_02,
+regexp_replace(e.sp_descripcion_dx_02, '\r|\n|\t', '', 'g') as sp_descripcion_dx_02,
+e.sp_tipo_dx_03,
+e.sp_codigo_dx_03,
+regexp_replace(e.sp_descripcion_dx_03, '\r|\n|\t', '', 'g') as sp_descripcion_dx_03,
+
+e.digitador as digitador_prestacion,
+e.fecha_registro as fecha_registro_prestacion,
+e.hora_registro as hora_registro_prestacion,
+e.id_prestacion_cpt as id_prestacion_cpt,
+
+-- Procedimientos
+bdt.codigo_procedimiento as sp_codigo_procedimiento, 
+bdt.descripcion_procedimiento as sp_descripcion_procedimiento, 
+bdt.suma_cantidad_registro as sp_suma_cantidad, 
+bdt.valorizacion as sp_valorizacion_total,
+
+-- Auditoria
+bdt.numero_documento_responsable as documento_responsable_cpt, 
+concat(bdt.apellido_paterno_responsable,' ',bdt.apellido_materno_responsable,', ',bdt.nombres_responsable) as nombre_responsable_cpt,
+bdt.upss_servicio as upss_codigo_cpt, 
+regexp_replace(bdt.upss_descripcion, '\r|\n', '', 'g') as upss_descripcion_cpt,
+
+bdt.digitador as digitador_cpt, 
+bdt.fecha_atencion as fecha_atencion_procedimiento,
+bdt.fecha_registro as fecha_registro_cpt, bdt.hora_registro as hora_registro_cpt,
+bdt.id_prestacion_cpt::text as id_prestacion_cpt,
+''::text as id_prestacion_laboratorio
+       
+FROM temp_hospitalizacion_local e
+	LEFT JOIN temp_bdt_emergencia_sigesapol bdt
+	ON bdt.tipo_documento_paciente::character varying = e.sp_tipo_documento_paciente::character varying
+	AND bdt.numero_documento_paciente = e.sp_numero_documento_paciente
+	AND bdt.fecha_atencion::date between e.sp_fecha_atencion::date AND e.sp_fecha_alta::date
+	WHERE bdt.codigo_procedimiento is not null
+	AND e.origen_reclasificacion IS NOT NULL
+)
+
+UNION ALL
+
+(
+SELECT 
+'laboratorio en hospitalización RECLASIFICADOS'::text as base,	
+	e.sp_tipo_documento_paciente, e.sp_numero_documento_paciente, 
+	e.sp_apellido_paterno_paciente, e.sp_apellido_materno_paciente, e.sp_nombres_paciente, 
+	e.sp_fecha_nacimiento, e.sp_genero_paciente, e.sp_condicion_asegurado, e.sp_tipo_atencion, 
+	e.sp_codigo_ipress, e.sp_nombre_ipress, e.sp_fecha_atencion, e.sp_fecha_alta, 
+	e.sp_tipo_documento_responsable, e.sp_numero_documento_responsable, 
+	e.sp_apellido_paterno_responsable, e.sp_apellido_materno_responsable, e.sp_nombres_responsable, 
+	e.sp_profesion_responsable, e.sp_especialidad_responsable, 
+	e.sp_circunstancia_alta, 
+	e.sp_upss_codigo, 
+	regexp_replace(e.sp_upss_descripcion, '\r|\n', '', 'g') as sp_upss_descripcion,
+	'1' AS hospitalizacion,
+-- Diagnósticos
+e.sp_tipo_dx_01,
+e.sp_codigo_dx_01,
+regexp_replace(e.sp_descripcion_dx_01, '\r|\n|\t', '', 'g') as sp_descripcion_dx_01,
+e.sp_tipo_dx_02,
+e.sp_codigo_dx_02,
+regexp_replace(e.sp_descripcion_dx_02, '\r|\n|\t', '', 'g') as sp_descripcion_dx_02,
+e.sp_tipo_dx_03,
+e.sp_codigo_dx_03,
+regexp_replace(e.sp_descripcion_dx_03, '\r|\n|\t', '', 'g') as sp_descripcion_dx_03,
+
+e.digitador as digitador_prestacion,
+e.fecha_registro as fecha_registro_prestacion,
+e.hora_registro as hora_registro_prestacion,
+e.id_prestacion_cpt as id_prestacion_cpt,
+
+laboratorio.codigo_procedimiento as sp_codigo_procedimiento,
+laboratorio.descripcion_procedimiento as sp_descripcion_procedimiento, 
+laboratorio.suma_cantidad_registro as sp_suma_cantidad, 
+laboratorio.valorizacion_total,
+
+-- Auditoria
+laboratorio.numero_documento_responsable as documento_responsable_cpt, 
+concat(laboratorio.apellido_paterno_responsable,' ',laboratorio.apellido_materno_responsable,', ',laboratorio.nombres_responsable) as nombre_responsable_cpt,
+laboratorio.upss_codigo as upss_codigo_cpt, 
+regexp_replace(laboratorio.upss_descripcion, '\r|\n', '', 'g') as upss_descripcion_cpt,
+
+laboratorio.digitador as digitador_cpt,
+laboratorio.fecha_muestra as fecha_atencion_procedimiento,
+laboratorio.fecha_registro as fecha_registro_cpt, laboratorio.hora_registro as hora_registro_cpt,
+''::text as id_prestacion_cpt,
+laboratorio.id_prestacion_laboratorio::text as id_prestacion_laboratorio
+	       
+	  FROM temp_hospitalizacion_local e
+	  LEFT JOIN temp_laboratorio_emergencia_sigesapol laboratorio
+		ON laboratorio.tipo_documento_paciente::character varying = e.sp_tipo_documento_paciente::character varying
+		AND laboratorio.numero_documento_paciente = e.sp_numero_documento_paciente
+		AND laboratorio.fecha_atencion::date between e.sp_fecha_atencion::date AND e.sp_fecha_alta::date
+
+	WHERE laboratorio.codigo_procedimiento is not null
+	AND e.origen_reclasificacion IS NOT NULL
+)

@@ -115,18 +115,23 @@ SELECT
 	d3.nombre AS sp_descripcion_dx_03,
 
 	e.id as id_emergencia_sigesapol,
-	-- CPMS de alta: el 22.5% viene vacío (check 26 del piloto). Fallback por
-	-- prioridad con LA MISMA convención del sistema legado ("UNITIC
-	-- regularizará"): prioridad I -> 99295 (UCI día-paciente),
-	-- II/III y demás -> 99231.15 (hosp. especializada continuada).
+	-- CPMS de alta: el 22.5% viene vacío (check 26 del piloto). Fallback:
+	--   - prioridad IV (pr.descripcion ILIKE 'IV%') -> '99281' y cantidad_cpms_estancia = 1
+	--   - resto con (alta - atencion + 1) = 1 -> '99234' y cantidad = días
+	--   - resto -> '99231.15' y cantidad = días
 	COALESCE(NULLIF(e.cpms_alta, ''),
 		CASE
-			WHEN pr.descripcion ILIKE 'I -%' OR pr.descripcion ILIKE 'I %' THEN '99295'
+			WHEN pr.descripcion ILIKE 'IV%' THEN '99281'
+			WHEN (date(e.fecha_alta_medica) - date(e.fecha_atencion) + 1) = 1 THEN '99234'
 			ELSE '99231.15'
 		END) as cpms_alta,
-	(COALESCE(e.cpms_alta, '') = '') AS es_cpms_derivado, -- true = código derivado por prioridad
+	(COALESCE(e.cpms_alta, '') = '') AS es_cpms_derivado, -- true = código derivado
 	pr.descripcion AS prioridad_descripcion, -- trazabilidad del fallback
-	(date(e.fecha_alta_medica) - date(e.fecha_atencion) + 1) as cantidad_cpms_estancia
+	CASE
+		WHEN pr.descripcion ILIKE 'IV%' THEN 1
+		ELSE (date(e.fecha_alta_medica) - date(e.fecha_atencion) + 1)
+	END as cantidad_cpms_estancia
+
 
   FROM emergencias e
   LEFT JOIN asegurados a ON a.id = e.id_asegurado

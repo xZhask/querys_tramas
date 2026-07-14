@@ -172,3 +172,129 @@ FROM temp_bdt_hospitalizacion_local WHERE COALESCE(valorizacion, 0) = 0
 UNION ALL
 SELECT 'estancia_hospitalizacion', COUNT(*)
 FROM temp_hospitalizacion_local WHERE COALESCE(sp_valorizacion_total, 0) = 0;
+
+
+-- ============================================================
+-- CONTROL 9: Estancias CPT contiguas o solapadas del mismo paciente
+-- Nota de auditoría: "regla del equipo: conservar cama general 99231.15".
+-- Clasifica los solapamientos como Transferencia de cama o Solapamiento Real.
+-- ============================================================
+SELECT
+	h1.sp_numero_documento_paciente AS documento,
+	h1.id_prestacion_cpt AS id_1,
+	h1.sp_fecha_atencion AS ingreso_1,
+	h1.sp_fecha_alta AS alta_1,
+	h1.sp_codigo_procedimiento AS cpms_1,
+	h2.id_prestacion_cpt AS id_2,
+	h2.sp_fecha_atencion AS ingreso_2,
+	h2.sp_fecha_alta AS alta_2,
+	h2.sp_codigo_procedimiento AS cpms_2,
+	CASE
+		WHEN h1.sp_fecha_alta = h2.sp_fecha_atencion OR h2.sp_fecha_alta = h1.sp_fecha_atencion
+			THEN 'TRANSFERENCIA DE CAMA (día de traslado facturado doble)'
+		ELSE 'SOLAPAMIENTO REAL'
+	END AS motivo
+FROM temp_hospitalizacion_local h1
+INNER JOIN temp_hospitalizacion_local h2
+   ON h1.sp_numero_documento_paciente = h2.sp_numero_documento_paciente
+  AND h1.id_prestacion_cpt < h2.id_prestacion_cpt
+  AND h1.sp_fecha_atencion <= h2.sp_fecha_alta
+  AND h1.sp_fecha_alta >= h2.sp_fecha_atencion
+ORDER BY documento, ingreso_1;
+
+
+-- ============================================================
+-- CONTROL 10: Control de No Doble Reporte
+-- Ningún par (documento + fecha + código) puede aparecer simultáneamente
+-- en la trama de emergencia y en la de hospitalización. Debe dar CERO.
+-- ============================================================
+WITH emergency_reported AS (
+	-- Estancias en emergencia
+	SELECT sp_numero_documento_paciente AS DNI, sp_fecha_atencion::date AS fecha, 
+		CASE 
+			WHEN e.prioridad = 1 THEN '99285'
+			WHEN e.prioridad = 2 THEN '99284'
+			WHEN e.prioridad = 3 THEN '99282'
+			WHEN e.prioridad = 4 THEN '99281'
+			ELSE '99281'
+		END AS codigo
+	FROM temp_emergencia_sigesapol_estancia e
+	WHERE e.excluir_tipo2 = false
+	  AND NOT EXISTS (
+		SELECT 1 FROM temp_hospitalizacion_local h
+		WHERE h.sp_numero_documento_paciente = e.sp_numero_documento_paciente
+		  AND e.sp_fecha_atencion::date <= h.sp_fecha_alta::date
+		  AND e.sp_fecha_alta_emergencia::date >= h.sp_fecha_atencion::date
+	  )
+	UNION ALL
+	-- Procedimientos en emergencia
+	SELECT e.sp_numero_documento_paciente, bdt.fecha_atencion::date, bdt.codigo_procedimiento
+	FROM temp_bdt_emergencia_sigesapol bdt
+	JOIN temp_emergencia_sigesapol_estancia e 
+	  ON e.sp_numero_documento_paciente = bdt.numero_documento_paciente 
+	 AND bdt.fecha_atencion::date between e.sp_fecha_atencion::date AND e.sp_fecha_alta_emergencia::date
+	WHERE e.excluir_tipo2 = false AND bdt.codigo_procedimiento IS NOT NULL
+	  AND NOT EXISTS (
+		SELECT 1 FROM temp_hospitalizacion_local h
+		WHERE h.sp_numero_documento_paciente = e.sp_numero_documento_paciente
+		  AND bdt.fecha_atencion::date between h.sp_fecha_atencion::date AND h.sp_fecha_alta::date
+	  )
+	UNION ALL
+	-- Laboratorios en emergencia
+	SELECT e.sp_numero_documento_paciente, lab.fecha_atencion::date, lab.codigo_procedimiento
+	FROM temp_laboratorio_emergencia_sigesapol lab
+	JOIN temp_emergencia_sigesapol_estancia e 
+	  ON e.sp_numero_documento_paciente = lab.numero_documento_paciente 
+	 AND lab.fecha_atencion::date between e.sp_fecha_atencion::date AND e.sp_fecha_alta_emergencia::date
+	WHERE e.excluir_tipo2 = false AND lab.codigo_procedimiento IS NOT NULL
+	  AND NOT EXISTS (
+		SELECT 1 FROM temp_hospitalizacion_local h
+		WHERE h.sp_numero_documento_paciente = e.sp_numero_documento_paciente
+		  AND lab.fecha_atencion::date between h.sp_fecha_atencion::date AND h.sp_fecha_alta::date
+	  )
+),
+hospitalization_reported AS (
+	-- Estancias en hospitalización
+	SELECT sp_numero_documento_paciente AS DNI, sp_fecha_atencion::date AS fecha, sp_codigo_procedimiento AS codigo
+	FROM temp_hospitalizacion_local
+	UNION ALL
+	-- Procedimientos hospitalización (normales)
+	SELECT e.sp_numero_documento_paciente, bdt.fecha_atencion::date, bdt.codigo_procedimiento
+	FROM temp_bdt_hospitalizacion_local bdt
+	JOIN temp_hospitalizacion_local e 
+	  ON e.sp_numero_documento_paciente = bdt.numero_documento_paciente 
+	 AND bdt.fecha_atencion::date between e.sp_fecha_atencion::date AND e.sp_fecha_alta::date
+	WHERE bdt.codigo_procedimiento IS NOT NULL
+	UNION ALL
+	-- Procedimientos hospitalización (reclasificados de emergencia)
+	SELECT e.sp_numero_documento_paciente, bdt.fecha_atencion::date, bdt.codigo_procedimiento
+	FROM temp_bdt_emergencia_sigesapol bdt
+	JOIN temp_hospitalizacion_local e 
+	  ON e.sp_numero_documento_paciente = bdt.numero_documento_paciente 
+	 AND bdt.fecha_atencion::date between e.sp_fecha_atencion::date AND e.sp_fecha_alta::date
+	WHERE e.origen_reclasificacion IS NOT NULL AND bdt.codigo_procedimiento IS NOT NULL
+	UNION ALL
+	-- Laboratorios hospitalización (normales)
+	SELECT e.sp_numero_documento_paciente, lab.fecha_atencion::date, lab.codigo_procedimiento
+	FROM temp_laboratorio_hospitalizacion_local lab
+	JOIN temp_hospitalizacion_local e 
+	  ON e.sp_numero_documento_paciente = lab.numero_documento_paciente 
+	 AND lab.fecha_atencion::date between e.sp_fecha_atencion::date AND e.sp_fecha_alta::date
+	WHERE lab.codigo_procedimiento IS NOT NULL
+	UNION ALL
+	-- Laboratorios hospitalización (reclasificados de emergencia)
+	SELECT e.sp_numero_documento_paciente, lab.fecha_atencion::date, lab.codigo_procedimiento
+	FROM temp_laboratorio_emergencia_sigesapol lab
+	JOIN temp_hospitalizacion_local e 
+	  ON e.sp_numero_documento_paciente = lab.numero_documento_paciente 
+	 AND lab.fecha_atencion::date between e.sp_fecha_atencion::date AND e.sp_fecha_alta::date
+	WHERE e.origen_reclasificacion IS NOT NULL AND lab.codigo_procedimiento IS NOT NULL
+)
+SELECT COUNT(*) AS total_duplicados_emergencia_hosp
+FROM emergency_reported er
+JOIN hospitalization_reported hr 
+  ON er.DNI = hr.DNI 
+ AND er.fecha = hr.fecha 
+ AND er.codigo = hr.codigo;
+
+

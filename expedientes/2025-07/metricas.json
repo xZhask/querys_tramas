@@ -1,0 +1,67 @@
+{
+    "volumenes_tablas":  {
+                             "bdt_emergencia":  {
+                                                    "SIGESAPOL":  17905,
+                                                    "CPT":  57533
+                                                },
+                             "estancias_hosp":  {
+                                                    "CPT":  1452
+                                                },
+                             "bdt_consulta":  {
+                                                  "SIGESAPOL":  181138,
+                                                  "CPT":  10006
+                                              },
+                             "lab_hospitalizacion":  {
+                                                         "SIGESAPOL":  2,
+                                                         "CPT":  55080
+                                                     },
+                             "lab_consulta":  {
+                                                  "SIGESAPOL":  295,
+                                                  "CPT":  71254
+                                              },
+                             "lab_emergencia":  {
+                                                    "SIGESAPOL":  2270,
+                                                    "CPT":  136051
+                                                },
+                             "bdt_hospitalizacion":  {
+                                                         "SIGESAPOL":  8822,
+                                                         "CPT":  93365
+                                                     }
+                         },
+    "observaciones":  {
+                          "medico_distinto":  384,
+                          "transiciones":  724,
+                          "duplicados_origen":  149,
+                          "cantidad_distinta":  277,
+                          "cpms_derivado_hospitalizacion":  861,
+                          "cpms_derivado_emergencia":  1812
+                      },
+    "deduplicacion":  {
+                          "duplicados_ciertos":  2830,
+                          "monto_evitado_doble_cobro":  158312.32000000021
+                      },
+    "fuente_canonica":  "CPT",
+    "periodo":  "2025-07",
+    "volumenes_tramas":  {
+                             "trama_farmacia":  105697,
+                             "trama_consulta_externa":  262872,
+                             "trama_hospitalizacion":  67827,
+                             "trama_emergencia":  33192
+                         },
+    "tiempos_segundos":  {
+                             "reclasificacion_24h":  0.1,
+                             "armado_emergencia":  1.12,
+                             "deduplicacion":  6.08,
+                             "consolidacion":  3.61,
+                             "armado_hosp":  1.81,
+                             "control_integridad":  0.99,
+                             "paso1c_proc":  22.09,
+                             "paso2_cpt":  63.5,
+                             "hermeticidad":  0.78,
+                             "paso1b_hosp":  0.21,
+                             "traslado_pgdump":  5.88,
+                             "armado_consulta":  4.11,
+                             "paso1":  0.95,
+                             "armado_farmacia":  71.83
+                         }
+}
