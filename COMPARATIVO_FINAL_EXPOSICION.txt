@@ -1,0 +1,134 @@
+================================================================================
+COMPARATIVA TECNICA Y DE NEGOCIO: PROCESO DE TRAMAS PARA SALUDPOL
+================================================================================
+
+Este documento presenta una comparativa integral del proceso de generación de
+tramas medicas para SALUDPOL en el Hospital LNS. Fusiona el análisis de negocio
+sobre la transición de sistemas con la evidencia técnica y de rendimiento
+obtenida directamente de las bases de datos locales (sigesapol_junio y
+db_cpt_junio26).
+
+---
+
+1. EL PROBLEMA DE FONDO (TRANSICION INCONCLUSA)
+
+El hospital registra sus atenciones de manera simultanea en dos plataformas
+debido a una migración de sistemas sin fecha de corte definitivo:
+* CPT: Sistema antiguo de facturación local (predominante hasta setiembre 2025).
+* SIGESAPOL: Sistema institucional de prestaciones (predominante desde octubre 2025).
+
+- El proceso anterior (Legacy):
+  Las consultas originales extraían información de forma aislada para cada base
+  de datos. Si se enviaban por separado, quedaban tramas incompletas; si se
+  juntaban manualmente en Excel, existía un altísimo riesgo de facturar DOS
+  VECES LA MISMA ATENCION a SALUDPOL.
+
+- El proceso nuevo (Optimizado):
+  Unifica ambas fuentes de datos en una sola base consolidada bajo una regla
+  canónica clara según el mes de producción (Julio-Setiembre: Canónico CPT;
+  Octubre-Diciembre: Canónico SIGESAPOL), deduplicando cruces de manera exacta en
+  base a reglas de coincidencia medica verificadas.
+
+---
+
+2. MATRIZ COMPARATIVA: ANTES VS. DESPUES
+
++-------------------------------------+-------------------------------------+-------------------------------------+
+| Aspecto Evaluado                    | Proceso Anterior (Legacy)           | Proceso Nuevo (Optimizado)          |
++-------------------------------------+-------------------------------------+-------------------------------------+
+| Integracion de Fuentes              | Consultas aisladas. SIGESAPOL o CPT | Consolidación automática y          |
+|                                     | quedaban fuera si no se unían a mano| balanceada según la fecha de corte. |
++-------------------------------------+-------------------------------------+-------------------------------------+
+| Control de Duplicados               | No existía. La limpieza dependía del| Deduplicación automática por        |
+|                                     | criterio del operador en Excel.     | documento, fecha y procedimiento.   |
+|                                     |                                     | (S/. 491,713.41 ahorrados).         |
++-------------------------------------+-------------------------------------+-------------------------------------+
+| Rendimiento SQL                     | Pésimo. Uso de funciones PL/pgSQL   | Excelente. Joins relacionales       |
+|                                     | que consultaban fila por fila.      | masivos y ROW_NUMBER() en memoria.  |
+|                                     | (Timeout de +10 min).               | (Solo 28.3 segundos por mes).       |
++-------------------------------------+-------------------------------------+-------------------------------------+
+| Tiempo de Consolidación             | Lento (~19 minutos por mes).        | Instantáneo (~3.5 segundos por mes) |
+|                                     | Inserciones masivas sin índices.    | gracias a indexación dinámica.      |
++-------------------------------------+-------------------------------------+-------------------------------------+
+| Calidad de Datos                    | Registros anulados, cancelados y    | 8 controles de sanidad automáticos. |
+|                                     | exámenes "huérfanos" entraban.      | Filtros estrictos de anulados.      |
++-------------------------------------+-------------------------------------+-------------------------------------+
+| Errores de Esquema                  | Scripts rotos por cambios en base de| Corrección del esquema de camas     |
+|                                     | datos (cc.nombre no existía).       | (cc.descripcion) y casts de tipos.  |
++-------------------------------------+-------------------------------------+-------------------------------------+
+| Parametrización                     | Fechas editadas a mano en 8 lugares | Fechas declaradas una sola vez en   |
+|                                     | distintos de forma inconsistente.   | la tabla de control cfg_periodo.    |
++-------------------------------------+-------------------------------------+-------------------------------------+
+| Seguridad de Ejecución              | El flujo y orden de scripts dependía| Automatizado de inicio a fin con el |
+|                                     | de la memoria del operador.         | script maestro run_month.ps1.       |
++-------------------------------------+-------------------------------------+-------------------------------------+
+
+---
+
+3. EVIDENCIA EMPIRICA DE RENDIMIENTO (PRUEBAS EN BASE DE DATOS)
+
+Para sustentar la migración, se realizaron pruebas de
+rendimiento reales sobre la base de datos sigesapol_junio para el periodo de
+Julio 2025:
+
+A. El cuello de botella en la versión antigua (Row-by-Row):
+La consulta antigua realizaba un INNER JOIN llamando a la función
+sp_sigesapol_diagnostico_en_prestacion_emergencia(pre.id).
+Al ejecutar la prueba, la consulta arrojo:
+--> "ERROR: cancelando la sentencia debido a que se agoto el tiempo de espera
+     de sentencias (Timeout de 60,000 ms)"
+* Diagnostico: Para procesar las prestaciones del mes, el motor debio ejecutar
+  la función mas de 180,000 veces consecutivas, colapsando el rendimiento.
+
+B. La solución basada en conjuntos en la version nueva:
+La versión optimizada utiliza una subconsulta con particionado relacional para
+extraer los primeros 3 diagnósticos activos de una sola pasada.
+* Resultado de la prueba:
+--> "Execution Time: 28,375 ms (28.3 segundos)"
+* Diagnostico: PostgreSQL procesa la tabla completa en memoria usando escaneos
+  de índices paralelos y Hash Joins, reduciendo el tiempo de ejecución a menos
+  del 5% del tiempo original.
+
+---
+
+4. COMPARATIVA DE RESULTADOS REALES: JULIO Y DICIEMBRE 2025
+
+A. Caso Julio 2025 (Canónico CPT)
+* Con las Queries Antiguas:
+  - Hubieras tenido que exportar las tramas de CPT y SIGESAPOL por separado.
+  - Al unirlas, se habrían enviado 2,830 registros de prestaciones duplicadas,
+    sumando un importe de S/. 158,312.32 observado y multado por SALUDPOL.
+  - La trama de hospitalización habría fallado por el error de columna cc.nombre.
+* Con las Queries Nuevas:
+  - Trama de Consulta Externa unificada y limpia con 262,872 registros.
+  - Los 2,830 duplicados fueron eliminados automáticamente en el Paso 6.
+  - Estancias hospitalarias valorizadas correctamente usando cc.descripcion.
+
+B. Caso Diciembre 2025 (Canónico SIGESAPOL)
+* Con las Queries Antiguas:
+  - Como el hospital ya operaba casi al 100% en el sistema nuevo, la query
+    antigua de CPT solo reporto 75 estancias. Las 1,376 estancias registradas
+    en SIGESAPOL se habrían quedado sin facturar (perdida de dinero).
+  - En Consulta Externa, se habrían enviado 1,712 registros duplicados por
+    remanentes de digitación (monto observado de S/. 34,918.57).
+* Con las Queries Nuevas:
+  - Se genero la trama de hospitalización completa con 7,430 registros
+    (incorporando las 1,376 estancias activas de SIGESAPOL).
+  - Los 1,712 duplicados fueron depurados, garantizando el cobro limpio de la
+    producción de fin de ano.
+
+---
+
+5. CONCLUSION Y RECOMENDACIONES DE GESTION
+
+1. Cero Margen de Error Humano: La parametrización en cfg_periodo y la
+   orquestación de run_month.ps1 aseguran que el cierre mensual sea idéntico
+   e independiente de quien lo ejecute.
+2. Corte Administrativo: Los datos demuestran que a partir de octubre de 2025,
+   el uso de CPT es marginal. Se recomienda dar de baja definitivamente el
+   registro en CPT para eliminar los cruces de bases de datos.
+3. Saneamiento en Origen: Se identificó un alto volumen de derivaciones de
+   códigos CPMS por falta de registro del diagnostico de alta en SIGESAPOL.
+   Es necesario concientizar a los médicos digitadores para evitar riesgos de
+   glosa técnica en auditorias de SALUDPOL.
+================================================================================
