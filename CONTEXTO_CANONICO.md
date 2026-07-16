@@ -18,13 +18,10 @@
    fuente predominante como canónica minimiza los huecos que debe rellenar la
    fuente complementaria.*
 
-2. **Llaves de deduplicación por tipo de trama**: Tipo 1 (Consulta Externa) =
-   documento + fecha + procedimiento + **médico tratante**; Tipo 2 y 3
-   (Emergencia y Hospitalización) = documento + fecha + procedimiento +
-   **cantidad**. *Justificación: en consulta externa la variable que distingue
-   un registro legítimo de un duplicado es quién atendió; en emergencia/
-   hospitalización (laboratorio, imágenes) la variable relevante es cuánto se
-   facturó, no quién firmó.*
+2. **Llaves de deduplicación por tipo de procedimiento** (independiente del tipo de atención): 
+   - **1 (Procedimientos médicos)** = documento + fecha + procedimiento + **médico tratante**.
+   - **2 (Laboratorio) y 3 (Imágenes)** = documento + fecha + procedimiento + **cantidad**.
+   *Justificación real: CPT firma el validador del servicio y SIGESAPOL el tratante (verificado por muestra).*
 
 3. **Regla de 24 horas REAL aplica solo a Caso B** (nueva estancia hospitalaria
    sin hospitalización previa que solape): se exige duración real, por
@@ -44,9 +41,7 @@
 5. **Prioridad IV en Tipo 2 → CPMS 99281, cantidad 1**: toda emergencia que
    permanece en trama Tipo 2 (≤24h reales) fuerza su código de alta al CPMS
    canónico de consulta según prioridad médica; prioridad IV siempre resuelve
-   a 99281 cantidad 1. *Justificación: uniforma la facturación de la prioridad
-   más baja bajo un único código, evitando variantes de digitación en
-   origen.*
+   a 99281 cantidad 1. *Justificación real: la prioridad IV no genera estancia, por lo que SIGESAPOL deja cpms_alta vacío por diseño (100% de vacíos), y 99281 es una consulta de emergencia de baja complejidad.*
 
 6. **Trama Tipo 2 admite SOLO códigos 9928x por prioridad** (99281-99285):
    cualquier otro código de alta en una fila Tipo 2 es un error de mapeo que
@@ -89,7 +84,8 @@
 | Julio 2025, recuperación neta por regla 24h (metodología corregida) | **S/. 562,337.47** | Verificado por `CONTROL 14` — ver nota sobre por qué reemplaza a 1,109,812.71 |
 | Partición Sección 4 (Tipo2+CasoA+CasoB+CierreAdmin=Total, residuo 0) | Semestre: 47,816+2,797+2,298+797=53,708 | Verificado por `CONTROL 13`, residuo 0 en los 6 meses |
 | Cuadratura C1 (= aserción A1 de conservación: LIMPIA + RETENIDA + INFORMATIVA = total extraído) | Cierra en **residuo 0** por mes y por tipo de trama, los 6 meses incluyendo julio | Verificado — las 3 aserciones (A1/A2/A3) están en OK para los 6 meses |
-| Benchmark de eficiencia vs. proceso manual | **91.5%** | Verificado — cifra de referencia para comparativos de exposición (ver `COMPARATIVO_FINAL_EXPOSICION.txt` para evidencia de rendimiento asociada) |
+| Benchmark de eficiencia vs. proceso manual | **91.5%** | coincidencia de pares E→H vs proceso manual (ver `COMPARATIVO_FINAL_EXPOSICION.txt` para evidencia de rendimiento asociada) |
+| Atenciones Tipo 2 (Emergencia) facturadas (CONTROL 15) | **47,816** atenciones / **S/. 1,585,426.27** | Verificado por CONTROL 15 en los 6 meses (Jul-Dic 2025) |
 
 > **Resultado final de la Parte 1** (todo verificado por query contra la BD
 > viva, pipeline completo jul-dic re-corrido tres veces con cada fix aplicado):
@@ -218,6 +214,11 @@
   incompleto, se reprocesaron aparte), (3) con el fix de snapshot, corrida
   completa jul-dic. Los números finales en la sección 2 de este documento
   son de la corrida (3).
+- **2026-07-16 — Correcciones finales de Reglas 2 y 5 y consolidación de CONTROL 15**:
+  1. Regla 2: Corregida para definir que la llave de deduplicación se rige por tipo de procedimiento (1=médicos tratantes para procedimientos médicos, 2/3=cantidad para laboratorios e imágenes) independientemente del tipo de atención (Consulta, Emergencia u Hospitalización). Justificación real verificada: CPT registra la firma de quien valida el servicio y SIGESAPOL la de quien trata al paciente.
+  2. Regla 5: Se actualizó la justificación real para prioridad IV (no genera estancia, cpms_alta es siempre vacío por diseño de SIGESAPOL, 99281 es consulta de baja complejidad).
+  3. Benchmark: Descrito como "coincidencia de pares E→H vs proceso manual" (91.5%).
+  4. CONTROL 15: Concilió las 47,816 atenciones Tipo 2 facturadas acumulando un monto valorizado de S/. 1,585,426.27 en el semestre.
 
 ---
 

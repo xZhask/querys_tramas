@@ -260,7 +260,10 @@ def check_a3_control10(year, month, period, skip):
         return True
 
     import psycopg2
-    conn = psycopg2.connect("dbname=db_cpt_junio26 user=postgres password=root host=localhost")
+    import os
+    dbname = os.environ.get("PGDATABASE", "db_cpt_junio26")
+    password = os.environ.get("PGPASSWORD", "root")
+    conn = psycopg2.connect(f"dbname={dbname} user=postgres password={password} host=localhost")
     cur = conn.cursor()
     cur.execute("SELECT MIN(fecha_atencion), MAX(fecha_atencion) FROM temp_bdt_consulta_local;")
     min_d, max_d = cur.fetchone()

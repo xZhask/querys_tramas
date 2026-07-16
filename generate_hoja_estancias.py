@@ -12,7 +12,10 @@ def parse_args():
     return parser.parse_args()
 
 def connect_db():
-    return psycopg2.connect("dbname=db_cpt_junio26 user=postgres password=root host=localhost")
+    import os
+    dbname = os.environ.get("PGDATABASE", "db_cpt_junio26")
+    password = os.environ.get("PGPASSWORD", "root")
+    return psycopg2.connect(f"dbname={dbname} user=postgres password={password} host=localhost")
 
 def parse_date(val):
     if val is None:

@@ -9,6 +9,7 @@ La implementación del nuevo pipeline automatizado ha permitido integrar de mane
 ### Hitos Clave del Semestre:
 * **Monto Total Recuperado por Regla de 24 Horas**: Se capturó una facturación adicional y defendible de **S/. 6,879,013.18** mediante la reclasificación de estancias de emergencia de más de 24 horas a hospitalización especializada y la unificación de estancias solapadas (Caso A). Esta cifra reemplaza la reportada en el cierre anterior (S/. 4,711,557.11); la sección 4 explica la reconciliación completa.
 * **Ahorro Financiero por Deduplicación**: Se previno un doble cobro potencial de **S/. 491,713.41** al eliminar automáticamente duplicidades de prestaciones idénticas registradas en CPT y SIGESAPOL.
+* **Conciliación de Atenciones Tipo 2 (Emergencia)**: Se conciliaron **47,816** atenciones de emergencia facturadas bajo la trama Tipo 2, acumulando un monto valorizado de **S/. 1,585,426.27** sustentado mediante el nuevo CONTROL 15.
 * **Volumen Total Procesado**: Se depuraron y generaron entregables finales con **1,776,481 registros** en Consulta Externa, **178,223** en Emergencia, **353,525** en Hospitalización y **647,774** dispensaciones de Farmacia.
 * **Hermeticidad y Consistencia**: El 100% de los lotes cerró con **cero registros con doble cobro** entre la trama de emergencia y la trama de hospitalización (CONTROL 10 = 0) y las 3 aserciones de calidad (A1/A2/A3) en verde para los 6 meses, incluyendo julio.
 
@@ -164,12 +165,47 @@ de auditoría:
 > descripción de RETENIDA se corrige para reflejar el contrato v2: el cierre
 > anterior la describía únicamente como "duplicado cierto entre CPT y
 > SIGESAPOL", omitiendo que los pares Caso A (la mayor parte de la población)
-> también son RETENIDA. (3) "Pares Caso A" aquí cuenta grupos únicos
-> emergencia-hospitalización (unidad de decisión del auditor); es distinto del
-> conteo de "Caso A Unidas" de la sección 4 (que cuenta episodios individuales
-> de emergencia absorbidos) — varias emergencias del mismo paciente pueden
-> pertenecer a un solo par/grupo cuando se solapan con la misma hospitalización
-> prolongada.
+> también son RETENIDA. (3) "Pares Caso A" cuenta los registros emparejados en la
+> hoja `ESTANCIAS_E_H` del libro de auditoría Excel (fila RETENIDA) generados por la
+> siguiente consulta SQL en `generate_outputs_v2.py`:
+> 
+> ```sql
+> SELECT 
+>     e.id_emergencia_sigesapol,
+>     e.sp_numero_documento_paciente,
+>     e.sp_fecha_atencion AS e_ing,
+>     e.sp_fecha_alta_emergencia AS e_alt,
+>     h.id_prestacion_cpt,
+>     h.sp_fecha_atencion AS h_ing,
+>     h.sp_fecha_alta AS h_alt,
+>     e.sp_apellido_paterno_paciente,
+>     e.sp_apellido_materno_paciente,
+>     e.sp_nombres_paciente,
+>     e.prioridad,
+>     e.sp_codigo_dx_01,
+>     e.sp_descripcion_dx_01,
+>     e.sp_codigo_dx_02,
+>     e.sp_descripcion_dx_02,
+>     e.sp_codigo_dx_03,
+>     e.sp_descripcion_dx_03
+> FROM temp_emergencia_sigesapol_estancia e
+> JOIN temp_hospitalizacion_local h 
+>   ON h.sp_numero_documento_paciente = e.sp_numero_documento_paciente
+>  AND e.sp_fecha_atencion::date <= h.sp_fecha_alta::date
+>  AND e.sp_fecha_alta_emergencia::date >= h.sp_fecha_atencion::date
+>  AND NOT (
+>      TO_CHAR(e.sp_fecha_atencion, 'YYYY-MM') <> TO_CHAR(e.sp_fecha_alta_emergencia, 'YYYY-MM') 
+>      AND (date(e.sp_fecha_alta_emergencia) - date(e.sp_fecha_atencion) + 1) > 15
+>  );
+> ```
+> 
+> **Reconciliación de "Pares Caso A" (667) vs "Caso A Unidas" (386) de Julio**:
+> Dado que la consulta de emparejamiento anterior se ejecuta *después* de que las nuevas hospitalizaciones del Caso B (248 registros en Julio) han sido insertadas en `temp_hospitalizacion_local`, el JOIN empareja:
+> - **386** verdaderos Caso A (Emergencias unidas a hospitalizaciones preexistentes).
+> - **248** coincidencias de las estancias Caso B (que cruzan de forma idéntica con sus propias hospitalizaciones recién insertadas).
+> - **33** solapamientos duplicados/cruzados provenientes de pacientes que cuentan con estancias hospitalarias múltiples o contiguas.
+> - Total: `386 + 248 + 33 = 667` filas en el libro.
+
 
 ---
 

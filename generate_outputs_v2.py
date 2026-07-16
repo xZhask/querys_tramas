@@ -15,7 +15,10 @@ def parse_args():
     return parser.parse_args()
 
 def connect_db():
-    return psycopg2.connect("dbname=db_cpt_junio26 user=postgres password=root host=localhost")
+    import os
+    dbname = os.environ.get("PGDATABASE", "db_cpt_junio26")
+    password = os.environ.get("PGPASSWORD", "root")
+    return psycopg2.connect(f"dbname={dbname} user=postgres password={password} host=localhost")
 
 def parse_date(val):
     if val is None:
@@ -122,7 +125,9 @@ def main():
     for idx, r in enumerate(hospitalizacion_raw): r['_row_idx'] = f"H_{idx}"
 
     # Farmacia query must run on sigesapol_junio database
-    conn_sig = psycopg2.connect("dbname=sigesapol_junio user=postgres password=root host=localhost")
+    import os
+    password_sig = os.environ.get("PGPASSWORD", "root")
+    conn_sig = psycopg2.connect(f"dbname=sigesapol_junio user=postgres password={password_sig} host=localhost")
     cur_sig = conn_sig.cursor()
     farmacia_raw = execute_sql_file(cur_sig, "12_SIGESAPOL_farmacia.sql")
     cur_sig.close()

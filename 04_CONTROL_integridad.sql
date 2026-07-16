@@ -409,3 +409,28 @@ SELECT
 	  (SELECT COALESCE(SUM(valor_tipo2), 0) FROM emerg_tipo2_valor)
 	  - (SELECT COALESCE(SUM(valor_tipo2), 0) FROM emerg_tipo2_valor WHERE excluir_tipo2=false)
 	) AS recuperacion_neta_estancias;
+
+
+-- ============================================================
+-- CONTROL 15: Conciliación de atenciones Tipo 2 (Emergencia)
+-- Cuenta las emergencias facturadas como Tipo 2 (excluir_tipo2 = false)
+-- y calcula el total valorizado según tarifa CPT correspondiente a su prioridad.
+-- ============================================================
+WITH emerg_tipo2_valor AS (
+	SELECT
+		e.id_emergencia_sigesapol,
+		e.excluir_tipo2,
+		COALESCE((SELECT nivel_3 FROM cpt WHERE cod_cpt = (
+			CASE e.prioridad
+				WHEN 1 THEN '99285' WHEN 2 THEN '99284'
+				WHEN 3 THEN '99282' WHEN 4 THEN '99281'
+				ELSE '99281'
+			END) LIMIT 1), 15.31) AS valor_tipo2
+	FROM temp_emergencia_sigesapol_estancia e
+)
+SELECT 
+	COUNT(*)::int AS emergencias_tipo2_facturadas,
+	COALESCE(SUM(valor_tipo2), 0)::numeric AS monto_valorizado_tipo2
+FROM emerg_tipo2_valor
+WHERE excluir_tipo2 = false;
+
