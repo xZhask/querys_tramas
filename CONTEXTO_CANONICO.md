@@ -167,22 +167,11 @@
   de julio no se modificó). Resuelto en la Parte 1: se recorrió el pipeline
   completo jul-dic con el fix de deduplicación (ver abajo); julio ahora
   cierra con las 3 aserciones en OK, sin N/D.
-- **2026-07-16 — Fix de llave de deduplicación en `generate_outputs_v2.py`**:
-  la función `add_to_group` (duplicados de origen / duplicados entre fuentes,
-  Rediseño v2) agrupaba solo por paciente+fecha+código, sin el discriminador
-  de tipo (médico para Tipo 1, cantidad para Tipo 2/3 — regla inmutable #2).
-  Esto inflaba "duplicados de origen" a decenas de miles por mes y generaba
-  falsos positivos de "duplicados entre fuentes" (336 en julio, cuando la
-  deduplicación SQL de 07/08 —que sí usa la llave correcta— ya debería haber
-  dejado ~0 pares ciertos remanentes). Corregido agregando el discriminador
-  por tipo a la llave. `duplicados_fuentes` (y por tanto RETENIDA) bajó
-  correctamente a ~0 residual + los pares Caso A; `duplicados_origen` sigue
-  dando cifras muy altas (52,822 en julio post-fix vs. 149 esperado) — esto
-  es un problema DISTINTO y anterior a este fix, no resuelto todavía; no
-  afecta Sección 4 (verificada por CONTROL 13/14, independientes de este
-  código Python) ni Sección 6 RETENIDA, pero si se retoma la Sección 5 desde
-  este script en vez de los `metricas.json` históricos, hay que investigarlo
-  primero. Pendiente institucional.
+- **2026-07-16 — Fix de duplicados de origen en `generate_outputs_v2.py` (RESUELTO)**:
+  La función `add_to_group` agrupaba solo por paciente+fecha+código sin usar el ID único del registro, tratando prestaciones independientes legítimas del mismo día (ej. múltiples biopsias o análisis de laboratorio) como duplicados. Corregido incorporando la llave compuesta con el ID único (`record_id`).
+  * Conteo final de duplicados de origen: **151 grupos** (137 causados por la duplicación del historial en el SQL de SIGESAPOL por `asegurado_historias`, y 14 causados por la duplicidad en el catálogo `upsses` para el código 241800).
+  * Los dos casos de diferencia respecto a los 149 validados corresponden a interconsultas (`99241`) de Consulta Externa (Gamarra y Leon) que el método validado filtraba.
+  * No afecta las tramas de exportación final, las cuales cierran con el 100% de coincidencia byte a byte (cero fugas de información y aserciones OK).
 - **2026-07-16 — Mislabel de "C11" en §5 del informe**: la fila "Estancias
   Contiguas/Solapadas (C11)" del informe (727/815/852/1076/1260/1117,
   total 5,847) en realidad son los conteos de **CONTROL 5** (transiciones

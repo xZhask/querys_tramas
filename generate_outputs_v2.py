@@ -37,6 +37,39 @@ def parse_date(val):
                 pass
     return None
 
+def get_row_date(row):
+    base = row.get('base', '')
+    if 'consulta' in base:
+        return parse_date(row.get('sp_fecha_atencion'))
+    elif 'emergencia' in base:
+        return parse_date(row.get('fecha_procedimiento') or row.get('sp_fecha_atencion'))
+    elif 'hosp' in base:
+        return parse_date(row.get('fecha_atencion_procedimiento') or row.get('sp_fecha_atencion'))
+    return parse_date(row.get('sp_fecha_atencion'))
+
+def get_row_doctor(row):
+    base = row.get('base', '')
+    if 'consulta' in base:
+        return row.get('sp_numero_documento_responsable')
+    elif 'emergencia' in base:
+        return row.get('numero_documento_responsable_procedimiento') or row.get('sp_numero_documento_responsable')
+    elif 'hosp' in base:
+        return row.get('documento_responsable_cpt') or row.get('sp_numero_documento_responsable')
+    return row.get('sp_numero_documento_responsable')
+
+def get_digitador(row):
+    return row.get('digitador_cpt') or row.get('digitador_laboratorio') or row.get('digitador_prestacion')
+
+def get_unique_id(row):
+    cpt_id = row.get('id_prestacion_cpt')
+    if cpt_id == '': cpt_id = None
+    lab_id = row.get('id_prestacion_laboratorio')
+    if lab_id == '': lab_id = None
+    eme_id = row.get('id_atencion_emergencia')
+    if eme_id == '': eme_id = None
+    return cpt_id or lab_id or eme_id or row.get('_row_idx')
+
+
 def execute_sql_file(cur, filepath):
     with open(filepath, 'r', encoding='utf-8') as f:
         lines = f.readlines()
@@ -321,18 +354,20 @@ def main():
         if 'estancia' in base:
             return
         dni = row.get('sp_numero_documento_paciente')
-        date_at = parse_date(row.get('sp_fecha_atencion'))
+        date_at = get_row_date(row)
         code = row.get('sp_codigo_procedimiento')
         if not dni or not date_at or not code:
             return
 
         # Normalize date to string for key
         date_str = date_at.strftime('%Y-%m-%d')
-        if 'consulta' in base:
-            discriminador = row.get('sp_numero_documento_responsable')  # Tipo 1: +medico
+        if 'procedimientos' in base:
+            discriminador = get_row_doctor(row)   # Tipo 1: +medico real
         else:
             discriminador = row.get('sp_suma_cantidad')                 # Tipo 2/3: +cantidad
-        key = (dni, date_str, code, discriminador)
+            
+        record_id = get_unique_id(row)
+        key = (dni, date_str, code, discriminador, record_id)
         grouped_procs.setdefault(key, []).append((row, source_type))
 
     for r in clean_consulta: add_to_group(r, 'consulta')
@@ -351,8 +386,8 @@ def main():
     
     for key, items in grouped_procs.items():
         # Check if duplicate between CPT and SIGESAPOL
-        cpt_items = [it for it in items if it[0].get('digitador_prestacion') != 'SIGESAPOL']
-        sig_items = [it for it in items if it[0].get('digitador_prestacion') == 'SIGESAPOL']
+        cpt_items = [it for it in items if get_digitador(it[0]) != 'SIGESAPOL']
+        sig_items = [it for it in items if get_digitador(it[0]) == 'SIGESAPOL']
         
         if cpt_items and sig_items:
             # Duplicate between sources! RETENIDA!
@@ -728,7 +763,7 @@ def main():
     retained_duplicates_sources.sort(key=lambda x: x[0]['dup_group_id'])
     for r, stype in retained_duplicates_sources:
         # Determine if CPT or SIGESAPOL
-        is_sig = r.get('digitador_prestacion') == 'SIGESAPOL'
+        is_sig = get_digitador(r) == 'SIGESAPOL'
         default_decision = 'NO PROCEDE' if is_sig else 'PROCEDE' # default to keep CPT for pilot or vice-versa
         # Let's check canonico:
         # If month >= 10: SIGESAPOL is canonical, so default is PROCEDE for SIGESAPOL, NO PROCEDE for CPT
@@ -766,7 +801,7 @@ def main():
     dup_o_rows = []
     duplicates_origin_list.sort(key=lambda x: x[0]['dup_group_id'])
     for r, stype in duplicates_origin_list:
-        is_sig = r.get('digitador_prestacion') == 'SIGESAPOL'
+        is_sig = get_digitador(r) == 'SIGESAPOL'
         dup_o_rows.append({
             'periodo': period,
             'tipo_atencion': str(r.get('sp_tipo_atencion')),
