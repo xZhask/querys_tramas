@@ -5,11 +5,23 @@
 -- ============================================================================
 
 -- 1. Agregar columnas de trazabilidad si no existen
-ALTER TABLE temp_hospitalizacion_local 
+ALTER TABLE temp_hospitalizacion_local
 ADD COLUMN IF NOT EXISTS origen_reclasificacion varchar(50) DEFAULT NULL;
 
-ALTER TABLE temp_emergencia_sigesapol_estancia 
+ALTER TABLE temp_emergencia_sigesapol_estancia
 ADD COLUMN IF NOT EXISTS excluir_tipo2 boolean DEFAULT false;
+
+-- 1b. Snapshot de valorización ANTES de reclasificar (para CONTROL 14 en
+-- 04_CONTROL_integridad.sql: recuperación neta real, sin contar de nuevo el
+-- valor de una estancia que ya se facturaba antes de unirla con Caso A).
+-- row_uid es estable a través del UPDATE de Caso A (mismo row, solo cambian
+-- fechas/valorización); las filas nuevas de Caso B no tienen fila "antes"
+-- correspondiente, así que aportan 0 al "antes" correctamente.
+ALTER TABLE temp_hospitalizacion_local ADD COLUMN IF NOT EXISTS row_uid serial;
+DROP TABLE IF EXISTS temp_hospitalizacion_antes_reclasif;
+CREATE TABLE temp_hospitalizacion_antes_reclasif AS
+SELECT row_uid, sp_valorizacion_total AS valorizacion_antes, sp_dias_estancia AS dias_antes
+FROM temp_hospitalizacion_local;
 
 -- 2. Marcar excluir_tipo2 = true para todas las emergencias > 24 horas (duración > 1 día)
 -- Esto incluye tanto las reclasificables como las de CIERRE ADMINISTRATIVO.

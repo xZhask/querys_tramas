@@ -319,3 +319,93 @@ WHERE e.condicion_alta = 3 -- 3 = TRANSFERIDO/HOSPITALIZACION en SALUDPOL
 	  AND e.sp_fecha_alta_emergencia::date >= h.sp_fecha_atencion::date
   )
 ORDER BY documento, emerg_ingreso;
+
+
+-- ============================================================
+-- CONTROL 13: Partición estricta de la Regla de 24 Horas (Sección 4 del
+-- informe de cierre). Verifica que Tipo2 + Caso A + Caso B + Cierre Admin =
+-- Emergencias Totales del período, con residuo 0. Cada categoría se deriva
+-- de forma INDEPENDIENTE (ninguna se calcula como resto de las demás) con
+-- las MISMAS condiciones que aplica 12_RECLASIFICAR_emergencias_24h.sql, no
+-- una redefinición aparte. Correr DESPUÉS de 12_RECLASIFICAR_emergencias_24h.
+-- ============================================================
+WITH cierre_admin AS (
+	SELECT e.id_emergencia_sigesapol
+	FROM temp_emergencia_sigesapol_estancia e
+	WHERE TO_CHAR(e.sp_fecha_atencion, 'YYYY-MM') <> TO_CHAR(e.sp_fecha_alta_emergencia, 'YYYY-MM')
+	  AND (date(e.sp_fecha_alta_emergencia) - date(e.sp_fecha_atencion) + 1) > 15
+),
+caso_b_hosp AS (
+	SELECT sp_numero_documento_paciente, sp_fecha_atencion, sp_fecha_alta
+	FROM temp_hospitalizacion_local
+	WHERE origen_reclasificacion = 'PERMANENCIA_EMERGENCIA_24H'
+),
+caso_b_emerg AS (
+	SELECT DISTINCT e.id_emergencia_sigesapol
+	FROM temp_emergencia_sigesapol_estancia e
+	JOIN caso_b_hosp b
+	  ON b.sp_numero_documento_paciente = e.sp_numero_documento_paciente
+	 AND b.sp_fecha_atencion = e.sp_fecha_atencion::date
+	 AND b.sp_fecha_alta = e.sp_fecha_alta_emergencia::date
+),
+caso_a_emerg AS (
+	SELECT e.id_emergencia_sigesapol
+	FROM temp_emergencia_sigesapol_estancia e
+	WHERE e.excluir_tipo2 = true
+	  AND e.id_emergencia_sigesapol NOT IN (SELECT id_emergencia_sigesapol FROM cierre_admin)
+	  AND e.id_emergencia_sigesapol NOT IN (SELECT id_emergencia_sigesapol FROM caso_b_emerg)
+)
+SELECT
+	(SELECT COUNT(*) FROM temp_emergencia_sigesapol_estancia)                          AS emergencias_totales,
+	(SELECT COUNT(*) FROM temp_emergencia_sigesapol_estancia WHERE excluir_tipo2=false) AS tipo2_facturadas,
+	(SELECT COUNT(*) FROM caso_a_emerg)                                                 AS caso_a_unidas,
+	(SELECT COUNT(*) FROM caso_b_emerg)                                                 AS caso_b_reclass,
+	(SELECT COUNT(*) FROM cierre_admin)                                                 AS cierre_admin,
+	(SELECT COUNT(*) FROM temp_emergencia_sigesapol_estancia)
+	  - (SELECT COUNT(*) FROM temp_emergencia_sigesapol_estancia WHERE excluir_tipo2=false)
+	  - (SELECT COUNT(*) FROM caso_a_emerg)
+	  - (SELECT COUNT(*) FROM caso_b_emerg)
+	  - (SELECT COUNT(*) FROM cierre_admin)
+	AS residuo_particion; -- debe ser 0; si no lo es, alguna categoría se solapa o hay filas sin clasificar
+
+
+-- ============================================================
+-- CONTROL 14: Recuperación Neta por diffs antes/después de trama (Sección 4
+-- del informe). Solo la ESTANCIA cambia de valorización al reclasificar
+-- (Tipo2 consulta por prioridad -> tarifa día-hospitalización); los
+-- procedimientos/laboratorio que se mueven de emergencia a hospitalización
+-- conservan su propia valorización de origen (bdt.valorizacion /
+-- laboratorio.valorizacion_total no cambian), así que no aportan neto.
+-- "Antes" hospitalización usa el snapshot `temp_hospitalizacion_antes_reclasif`
+-- (tomado en 12_RECLASIFICAR ANTES de unir/insertar nada): así una estancia
+-- Caso A aporta solo su incremento real (valor extendido - valor que YA se
+-- facturaba antes de unirla), no el valor completo de la estancia original
+-- otra vez. Las filas nuevas de Caso B no tienen fila "antes" (aportan 0,
+-- correcto: son 100% nuevas). "Antes" emergencia = como si NINGUNA emergencia
+-- se hubiera reclasificado (todas valorizadas como Tipo 2).
+-- ============================================================
+WITH emerg_tipo2_valor AS (
+	SELECT
+		e.id_emergencia_sigesapol,
+		e.excluir_tipo2,
+		COALESCE((SELECT nivel_3 FROM cpt WHERE cod_cpt = (
+			CASE e.prioridad
+				WHEN 1 THEN '99285' WHEN 2 THEN '99284'
+				WHEN 3 THEN '99282' WHEN 4 THEN '99281'
+				ELSE '99281'
+			END) LIMIT 1), 15.31) AS valor_tipo2
+	FROM temp_emergencia_sigesapol_estancia e
+)
+SELECT
+	(SELECT COALESCE(SUM(valor_tipo2), 0) FROM emerg_tipo2_valor)                          AS emergencia_estancia_antes,
+	(SELECT COALESCE(SUM(valor_tipo2), 0) FROM emerg_tipo2_valor WHERE excluir_tipo2=false) AS emergencia_estancia_despues,
+	(SELECT COALESCE(SUM(valorizacion_antes), 0) FROM temp_hospitalizacion_antes_reclasif)  AS hospitalizacion_estancia_antes,
+	(SELECT COALESCE(SUM(sp_valorizacion_total), 0) FROM temp_hospitalizacion_local)         AS hospitalizacion_estancia_despues,
+	-- Neto = ganancia en hospitalización - pérdida en emergencia
+	(
+	  (SELECT COALESCE(SUM(sp_valorizacion_total), 0) FROM temp_hospitalizacion_local)
+	  - (SELECT COALESCE(SUM(valorizacion_antes), 0) FROM temp_hospitalizacion_antes_reclasif)
+	) - (
+	  (SELECT COALESCE(SUM(valor_tipo2), 0) FROM emerg_tipo2_valor)
+	  - (SELECT COALESCE(SUM(valor_tipo2), 0) FROM emerg_tipo2_valor WHERE excluir_tipo2=false)
+	) AS recuperacion_neta_estancias;

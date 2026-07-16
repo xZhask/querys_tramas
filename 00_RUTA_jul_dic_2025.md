@@ -2,10 +2,13 @@
 
 ## Inventario completo de archivos
 
-**Nuevos (este paquete):** 00_RUTA (este documento), 01_PARCHES, 02_MAESTRO_paso1,
-03_MAESTRO_paso2, 04_CONTROL, 05_FASE2 (hosp. SIGESAPOL), 06_FASE2 (proc.
-SIGESAPOL), 07_FASE2 (reportes de deduplicación), 08_CONSOLIDAR,
-09/10/11_ARMADO (copias de los armados originales con UNION ALL).
+**Nuevos (este paquete):** 00_RUTA (este documento), CONTEXTO_CANONICO.md
+(ancla de contexto — leer siempre primero), 00_INSTALAR_post_restauracion_CPT
+y _SIGESAPOL (instaladores idempotentes post-restore), 01_PARCHES,
+02_MAESTRO_paso1, 03_MAESTRO_paso2, 04_CONTROL, 05_FASE2 (hosp. SIGESAPOL),
+06_FASE2 (proc. SIGESAPOL), 07_FASE2 (reportes de deduplicación),
+08_CONSOLIDAR, 09/10/11_ARMADO (copias de los armados originales con UNION
+ALL).
 
 **Del paquete original, aún necesarios (sin modificar):**
 - Funciones CPT: `00_sp_diagnostico_en_prestacion_cpt`, `02_SP_HOSPITALIZACION`,
@@ -31,6 +34,16 @@ SIGESAPOL), 07_FASE2 (reportes de deduplicación), 08_CONSOLIDAR,
 | 0.4 | `01_PARCHES_funciones.sql` — Parches B y C | CPT | Laboratorio corregido + dx emergencia legado |
 | 0.5 | `01_PARCHES_funciones.sql` — Parche A | SIGESAPOL | Dx SIGESAPOL sin anulados |
 
+> **REGLA OPERATIVA — tras restaurar cualquier backup**: correr el instalador
+> correspondiente ANTES de todo (antes de cualquier paso de FASE MENSUAL):
+> `00_INSTALAR_post_restauracion_CPT.sql` en la BD CPT y
+> `00_INSTALAR_post_restauracion_SIGESAPOL.sql` en la BD SIGESAPOL. Ambos son
+> idempotentes (se pueden correr las veces que sea necesario) y terminan con
+> una verificación ✓/✗ de las funciones y tablas esperadas. El instalador CPT
+> deja instalados Parches B y C más `cfg_fuente_canonica` con sus vigencias;
+> las funciones originales 00/02/03 solo se verifican (✗ si el backup vino
+> incompleto), no se recrean, porque su DDL vive fuera de este repo.
+
 ### FASE MENSUAL (repetir por cada período, jul → dic 2025)
 
 | # | Archivo | BD | Edición requerida |
@@ -41,7 +54,7 @@ SIGESAPOL), 07_FASE2 (reportes de deduplicación), 08_CONSOLIDAR,
 | 4 | **Traslado** de las 3 tablas a CPT (pg_dump, comandos abajo) | — | — |
 | 5 | `03_MAESTRO_paso2_CPT.sql` | CPT | **Editar cfg_periodo** (mismo período del paso 1) |
 | 6 | `07_FASE2_deduplicacion_CPT_SIGESAPOL.sql` | CPT | — · Exportar B.2 (hoja OBSERVACIONES DUPLICADOS) y B.3 (resumen para jefatura) ANTES del paso 7 |
-| 7 | `08_CONSOLIDAR_fuentes_para_armado.sql` | CPT | **Editar cfg_canonico**: 'CPT' (jul–sep) / 'SIGESAPOL' (oct–dic) |
+| 7 | `08_CONSOLIDAR_fuentes_para_armado.sql` | CPT | — (cfg_canonico ya NO se edita: se deriva automáticamente de `cfg_fuente_canonica` según el período activo en `cfg_periodo`; ver CONTEXTO_CANONICO.md) |
 | 8 | `04_CONTROL_integridad.sql` | CPT | — · Controles 1–4 y 7–8 en cero; control 5 = hoja OBSERVACIONES transiciones |
 | 9 | `09_ARMADO_consulta_externa.sql` | CPT | Exportar → tramas de consulta externa |
 | 10 | `10_ARMADO_emergencia.sql` | CPT | Exportar → tramas de emergencia |

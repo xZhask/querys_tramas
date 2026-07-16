@@ -62,7 +62,7 @@ $perf["paso1c_proc"] = [Math]::Round(((Get-Date) - $t0).TotalSeconds, 2)
 $t0 = Get-Date
 Write-Output "[4/12] Trasladando tablas de SIGESAPOL a CPT..."
 & $psqlPath -U postgres -d db_cpt_junio26 -c "DROP TABLE IF EXISTS temp_emergencia_sigesapol_estancia, temp_hospitalizacion_sigesapol_estancia, temp_sigesapol_procedimientos;" | Out-Null
-& $pgdumpPath -U postgres -d sigesapol_junio -t temp_emergencia_sigesapol_estancia -t temp_hospitalizacion_sigesapol_estancia -t temp_sigesapol_procedimientos | & $psqlPath -U postgres -d db_cpt_junio26 | Out-Null
+& cmd.exe /c "set PGPASSWORD=root&& `"$pgdumpPath`" -U postgres -d sigesapol_junio -t temp_emergencia_sigesapol_estancia -t temp_hospitalizacion_sigesapol_estancia -t temp_sigesapol_procedimientos | `"$psqlPath`" -U postgres -d db_cpt_junio26" | Out-Null
 $perf["traslado_pgdump"] = [Math]::Round(((Get-Date) - $t0).TotalSeconds, 2)
 
 # 6. Modificar y Ejecutar Script 03 (CPT Maestro)
@@ -97,184 +97,40 @@ Write-Output "[6/12] Ejecutando 07_FASE2_deduplicacion_CPT_SIGESAPOL.sql..."
 $file07 = "07_FASE2_deduplicacion_CPT_SIGESAPOL.sql"
 & $psqlPath -U postgres -d db_cpt_junio26 -f $file07 | Out-Null
 
-# Exportar reporte B.2 observaciones
-$queryB2 = "SELECT cpt.numero_documento_paciente AS documento, cpt.fecha_atencion::date AS fecha, cpt.codigo_procedimiento, cpt.descripcion_procedimiento, sig.tipo_procedimiento, cpt.fuente_cpt, sig.base AS fuente_sigesapol, cpt.numero_documento_responsable AS medico_cpt, sig.sp_numero_documento_responsable AS medico_sigesapol, cpt.suma_cantidad_registro AS cantidad_cpt, sig.sp_suma_cantidad AS cantidad_sigesapol, cpt.valorizacion AS valorizacion_cpt, sig.sp_valorizacion_calculada AS valorizacion_sigesapol, CASE WHEN sig.tipo_procedimiento = 1 THEN 'MEDICO DISTINTO ENTRE FUENTES - VALIDAR POSIBLE DOBLE REGISTRO' ELSE 'CANTIDAD DISTINTA ENTRE FUENTES - VALIDAR CONSOLIDACION DE CANTIDADES' END AS motivo_observacion FROM temp_cpt_procedimientos_unificado cpt JOIN temp_sigesapol_procedimientos sig ON sig.sp_numero_documento_paciente = cpt.numero_documento_paciente AND sig.sp_fecha_atencion::date = cpt.fecha_atencion::date AND sig.sp_codigo_procedimiento = cpt.codigo_procedimiento WHERE NOT ( (sig.tipo_procedimiento = 1 AND sig.sp_numero_documento_responsable = cpt.numero_documento_responsable) OR (sig.tipo_procedimiento IN (2, 3) AND sig.sp_suma_cantidad = cpt.suma_cantidad_registro) ) ORDER BY motivo_observacion, documento, fecha"
-$csvB2 = "$expPath/observaciones_duplicados.csv"
-& $psqlPath -U postgres -d db_cpt_junio26 -c "\copy ($queryB2) TO '$csvB2' WITH CSV HEADER" | Out-Null
-
-# Exportar reporte B.3 resumen doble cobro
-$queryB3 = "SELECT sig.base, sig.tipo_procedimiento, COUNT(*) AS duplicados_ciertos, SUM(sig.sp_valorizacion_calculada) AS monto_evitado_doble_cobro FROM temp_cpt_procedimientos_unificado cpt JOIN temp_sigesapol_procedimientos sig ON sig.sp_numero_documento_paciente = cpt.numero_documento_paciente AND sig.sp_fecha_atencion::date = cpt.fecha_atencion::date AND sig.sp_codigo_procedimiento = cpt.codigo_procedimiento AND ( (sig.tipo_procedimiento = 1 AND sig.sp_numero_documento_responsable = cpt.numero_documento_responsable) OR (sig.tipo_procedimiento IN (2, 3) AND sig.sp_suma_cantidad = cpt.suma_cantidad_registro) ) GROUP BY sig.base, sig.tipo_procedimiento ORDER BY sig.base, sig.tipo_procedimiento"
-$csvB3 = "$expPath/resumen_doble_cobro.csv"
-& $psqlPath -U postgres -d db_cpt_junio26 -c "\copy ($queryB3) TO '$csvB3' WITH CSV HEADER" | Out-Null
-$perf["deduplicacion"] = [Math]::Round(((Get-Date) - $t0).TotalSeconds, 2)
-
-# 8. Modificar y Ejecutar Consolidacion (Script 08)
+# 8. Ejecutar Consolidacion (Script 08) -- cfg_canonico ya se auto-deriva de
+#    cfg_fuente_canonica dentro del propio script, no se edita mas a mano.
 $t0 = Get-Date
-Write-Output "[7/12] Ejecutando 08_CONSOLIDAR_fuentes_para_armado.sql..."
+Write-Output "[7/9] Ejecutando 08_CONSOLIDAR_fuentes_para_armado.sql (canonico: $canonico)..."
 $file08 = [System.IO.Path]::GetFullPath("08_CONSOLIDAR_fuentes_para_armado.sql")
-$content08 = [System.IO.File]::ReadAllText($file08, [System.Text.Encoding]::UTF8)
-$content08 = $content08 -replace "SELECT '[^']+'::text AS fuente;", "SELECT '$canonico'::text AS fuente;"
-[System.IO.File]::WriteAllText($file08, $content08, (New-Object System.Text.UTF8Encoding $false))
 
-& $psqlPath -U postgres -d db_cpt_junio26 -f $file08 > "$expPath/resumen_consolidacion.txt"
-$perf["consolidacion"] = [Math]::Round(((Get-Date) - $t0).TotalSeconds, 2)
+& $psqlPath -U postgres -d db_cpt_junio26 -f $file08 | Out-Null
 
-# Reclasificar emergencias > 24 horas y unión de estancias
-$t0_rec = Get-Date
-Write-Output "Ejecutando 12_RECLASIFICAR_emergencias_24h.sql..."
+# 9. Reclasificar emergencias > 24 horas y unión de estancias
+Write-Output "[8/9] Ejecutando 12_RECLASIFICAR_emergencias_24h.sql..."
 $file12 = "12_RECLASIFICAR_emergencias_24h.sql"
 & $psqlPath -U postgres -d db_cpt_junio26 -f $file12 | Out-Null
-$perf["reclasificacion_24h"] = [Math]::Round(((Get-Date) - $t0_rec).TotalSeconds, 2)
 
-# 9. Ejecutar Control de Integridad (Script 04) y exportar Control 5
-$t0 = Get-Date
-Write-Output "[8/12] Ejecutando 04_CONTROL_integridad.sql..."
+# 10. Ejecutar Control de Integridad (Script 04)
+Write-Output "[9/9] Ejecutando 04_CONTROL_integridad.sql..."
 $file04 = "04_CONTROL_integridad.sql"
-& $psqlPath -U postgres -d db_cpt_junio26 -f $file04 > "$expPath/controles_integridad.txt"
+$infosPath = "$expPath\03_INFORMATIVOS"
+New-Item -ItemType Directory -Force -Path $infosPath | Out-Null
+& $psqlPath -U postgres -d db_cpt_junio26 -f $file04 > "$infosPath\controles_integridad_raw.txt"
 
-# Exportar Control 5 (transiciones)
-$queryC5 = "SELECT e.sp_numero_documento_paciente AS documento, e.sp_apellido_paterno_paciente, e.sp_nombres_paciente, e.sp_fecha_atencion::date AS emerg_ingreso, e.sp_fecha_alta_emergencia::date AS emerg_alta, h.sp_fecha_atencion::date AS hosp_ingreso, h.sp_fecha_alta::date AS hosp_alta, CASE WHEN h.sp_fecha_atencion::date = e.sp_fecha_alta_emergencia::date THEN 'TRANSICION MISMO DIA' WHEN h.sp_fecha_atencion::date < e.sp_fecha_alta_emergencia::date THEN 'SOLAPAMIENTO' ELSE 'CONTIGUO' END AS observacion FROM temp_emergencia_sigesapol_estancia e JOIN temp_hospitalizacion_local h ON h.sp_numero_documento_paciente = e.sp_numero_documento_paciente AND h.sp_fecha_atencion::date <= e.sp_fecha_alta_emergencia::date + 1 AND h.sp_fecha_alta::date >= e.sp_fecha_atencion::date ORDER BY documento, emerg_ingreso"
-$csvC5 = "$expPath/observaciones_transiciones.csv"
-& $psqlPath -U postgres -d db_cpt_junio26 -c "\copy ($queryC5) TO '$csvC5' WITH CSV HEADER" | Out-Null
-$perf["control_integridad"] = [Math]::Round(((Get-Date) - $t0).TotalSeconds, 2)
-
-# 10. Correr Check de Hermeticidad (Check 9)
-$t0 = Get-Date
-Write-Output "[9/12] Ejecutando Check de Hermeticidad (Duplicados de Origen)..."
-$queryHermeticidad = "
-SELECT doc, fecha, cod, cant, id, COUNT(*) AS repeticiones
-FROM (
-    SELECT 'hospitalizacion'::text AS tabla, sp_numero_documento_paciente AS doc, sp_fecha_atencion::date AS fecha, sp_codigo_procedimiento AS cod, sp_dias_estancia AS cant, id_prestacion_cpt::text AS id
-    FROM temp_hospitalizacion_local WHERE digitador = 'SIGESAPOL'
-    UNION ALL
-    SELECT 'bdt_consulta', numero_documento_paciente, fecha_atencion::date, codigo_procedimiento, suma_cantidad_registro, id_prestacion_cpt::text
-    FROM temp_bdt_consulta_local WHERE digitador = 'SIGESAPOL'
-    UNION ALL
-    SELECT 'bdt_emergencia', numero_documento_paciente, fecha_atencion::date, codigo_procedimiento, suma_cantidad_registro, id_prestacion_cpt::text
-    FROM temp_bdt_emergencia_sigesapol WHERE digitador = 'SIGESAPOL'
-    UNION ALL
-    SELECT 'bdt_hospitalizacion', numero_documento_paciente, fecha_atencion::date, codigo_procedimiento, suma_cantidad_registro, id_prestacion_cpt::text
-    FROM temp_bdt_hospitalizacion_local WHERE digitador = 'SIGESAPOL'
-    UNION ALL
-    SELECT 'lab_consulta', numero_documento_paciente, fecha_atencion::date, codigo_procedimiento, suma_cantidad_registro, id_prestacion_laboratorio::text
-    FROM temp_laboratorio_consulta_local WHERE digitador = 'SIGESAPOL'
-    UNION ALL
-    SELECT 'lab_emergencia', numero_documento_paciente, fecha_atencion::date, codigo_procedimiento, suma_cantidad_registro, id_prestacion_laboratorio::text
-    FROM temp_laboratorio_emergencia_sigesapol WHERE digitador = 'SIGESAPOL'
-    UNION ALL
-    SELECT 'lab_hospitalizacion', numero_documento_paciente, fecha_atencion::date, codigo_procedimiento, suma_cantidad_registro, id_prestacion_laboratorio::text
-    FROM temp_laboratorio_hospitalizacion_local WHERE digitador = 'SIGESAPOL'
-) t
-GROUP BY 1, 2, 3, 4, 5
-HAVING COUNT(*) > 1
-"
-$csvHermeticidad = "$expPath/observaciones_duplicados_origen.csv"
-& $psqlPath -U postgres -d db_cpt_junio26 -c "\copy ($queryHermeticidad) TO '$csvHermeticidad' WITH CSV HEADER" | Out-Null
-$perf["hermeticidad"] = [Math]::Round(((Get-Date) - $t0).TotalSeconds, 2)
-
-# 11. Ejecutar y Exportar Armados de Consulta, Emergencia y Hospitalizacion (9, 10, 11)
-$t0 = Get-Date
-Write-Output "[10/12] Ejecutando armado de tramas consulta externa..."
-& $psqlPath -U postgres -d db_cpt_junio26 -f "09_ARMADO_consulta_externa.sql" -o "$tramaPath/trama_consulta_externa.txt"
-$perf["armado_consulta"] = [Math]::Round(((Get-Date) - $t0).TotalSeconds, 2)
-
-$t0 = Get-Date
-Write-Output "[11/12] Ejecutando armado de tramas emergencia..."
-& $psqlPath -U postgres -d db_cpt_junio26 -f "10_ARMADO_emergencia.sql" -o "$tramaPath/trama_emergencia.txt"
-$perf["armado_emergencia"] = [Math]::Round(((Get-Date) - $t0).TotalSeconds, 2)
-
-$t0 = Get-Date
-Write-Output "[11/12] Ejecutando armado de tramas hospitalizacion..."
-& $psqlPath -U postgres -d db_cpt_junio26 -f "11_ARMADO_hospitalizacion.sql" -o "$tramaPath/trama_hospitalizacion.txt"
-$perf["armado_hosp"] = [Math]::Round(((Get-Date) - $t0).TotalSeconds, 2)
-
-# 12. Ejecutar y Exportar Farmacia (12_SIGESAPOL_farmacia.sql)
-$t0 = Get-Date
-Write-Output "[12/12] Ejecutando armado de trama farmacia..."
-& $psqlPath -U postgres -d sigesapol_junio -f "12_SIGESAPOL_farmacia.sql" -o "$tramaPath/trama_farmacia.txt"
-$perf["armado_farmacia"] = [Math]::Round(((Get-Date) - $t0).TotalSeconds, 2)
-
-# 13. Recolectar Volumenes y Generar metricas.json
-Write-Output "Recolectando metricas..."
-$metrics = @{
-    "periodo" = "$Year-$MonthPad"
-    "fuente_canonica" = $canonico
-    "volumenes_tablas" = @{}
-    "volumenes_tramas" = @{}
-    "deduplicacion" = @{}
-    "observaciones" = @{}
-    "tiempos_segundos" = $perf
+# 11. Generar Salidas Rediseñadas v2 (TRAMAS + EXCEL DE AUDITORIA)
+Write-Output "Generando salidas Rediseñadas v2 (01_TRAMAS + 02_AUDITORIA + 03_INFORMATIVOS)..."
+& python "$PSScriptRoot\generate_outputs_v2.py" --year $Year --month $Month
+if ($LASTEXITCODE -ne 0) {
+    throw "generate_outputs_v2.py fallo (aserciones A1/A2) para $Year-$MonthPad. Revisar salida arriba. DETENIDO."
 }
 
-# Obtener volumenes de tablas consolidadas (origen CPT vs SIGESAPOL)
-$sqlVolTablas = "
-SELECT 'bdt_consulta' AS t, digitador = 'SIGESAPOL' AS sig, COUNT(*) FROM temp_bdt_consulta_local GROUP BY 2
-UNION ALL SELECT 'bdt_emergencia', digitador = 'SIGESAPOL', COUNT(*) FROM temp_bdt_emergencia_sigesapol GROUP BY 2
-UNION ALL SELECT 'bdt_hospitalizacion', digitador = 'SIGESAPOL', COUNT(*) FROM temp_bdt_hospitalizacion_local GROUP BY 2
-UNION ALL SELECT 'lab_consulta', digitador = 'SIGESAPOL', COUNT(*) FROM temp_laboratorio_consulta_local GROUP BY 2
-UNION ALL SELECT 'lab_emergencia', digitador = 'SIGESAPOL', COUNT(*) FROM temp_laboratorio_emergencia_sigesapol GROUP BY 2
-UNION ALL SELECT 'lab_hospitalizacion', digitador = 'SIGESAPOL', COUNT(*) FROM temp_laboratorio_hospitalizacion_local GROUP BY 2
-UNION ALL SELECT 'estancias_hosp', digitador = 'SIGESAPOL', COUNT(*) FROM temp_hospitalizacion_local GROUP BY 2;
-"
-$resVolTablas = & $psqlPath -U postgres -d db_cpt_junio26 -A -t -c $sqlVolTablas
-foreach ($line in ($resVolTablas -split "`r`n|`n")) {
-    if ($line -match "^([^|]+)\|([^|]+)\|(\d+)$") {
-        $tablaName = $Matches[1]
-        $orig = if ($Matches[2] -eq "t") { "SIGESAPOL" } else { "CPT" }
-        $cnt = [int]$Matches[3]
-        if (-not $metrics["volumenes_tablas"][$tablaName]) {
-            $metrics["volumenes_tablas"][$tablaName] = @{}
-        }
-        $metrics["volumenes_tablas"][$tablaName][$orig] = $cnt
-    }
+# 12. Verificar aserciones A1/A2/A3 del contrato de salidas v2
+Write-Output "Verificando aserciones A1/A2/A3 para $Year-$MonthPad..."
+& python "$PSScriptRoot\14_VERIFICAR_ASERTOS.py" --year $Year --month $Month
+if ($LASTEXITCODE -ne 0) {
+    throw "Aserciones A1/A2/A3 fallidas para $Year-$MonthPad. Revisar salida arriba. DETENIDO."
 }
-
-# Obtener volumenes de las tramas exportadas
-$metrics["volumenes_tramas"]["trama_consulta_externa"] = (Get-Content "$tramaPath/trama_consulta_externa.txt" | Measure-Object -Line).Lines
-$metrics["volumenes_tramas"]["trama_emergencia"] = (Get-Content "$tramaPath/trama_emergencia.txt" | Measure-Object -Line).Lines
-$metrics["volumenes_tramas"]["trama_hospitalizacion"] = (Get-Content "$tramaPath/trama_hospitalizacion.txt" | Measure-Object -Line).Lines
-$metrics["volumenes_tramas"]["trama_farmacia"] = (Get-Content "$tramaPath/trama_farmacia.txt" | Measure-Object -Line).Lines
-
-# Obtener duplicados evitados y monto del reporte B.3
-$sqlB3 = "SELECT SUM(duplicados_ciertos) AS d_tot, SUM(monto_evitado_doble_cobro) AS m_tot FROM ($queryB3) t;"
-$resB3 = & $psqlPath -U postgres -d db_cpt_junio26 -A -t -c $sqlB3
-if ($resB3 -match "^(\d+)\|([0-9.]+)") {
-    $metrics["deduplicacion"]["duplicados_ciertos"] = [int]$Matches[1]
-    $metrics["deduplicacion"]["monto_evitado_doble_cobro"] = [double]$Matches[2]
-} else {
-    $metrics["deduplicacion"]["duplicados_ciertos"] = 0
-    $metrics["deduplicacion"]["monto_evitado_doble_cobro"] = 0.0
-}
-
-# Obtener conteo de observaciones
-$metrics["observaciones"]["medico_distinto"] = (Import-Csv $csvB2 | Where-Object { $_.tipo_procedimiento -eq "1" } | Measure-Object).Count
-$metrics["observaciones"]["cantidad_distinta"] = (Import-Csv $csvB2 | Where-Object { $_.tipo_procedimiento -ne "1" } | Measure-Object).Count
-$metrics["observaciones"]["transiciones"] = (Import-Csv $csvC5 | Measure-Object).Count
-$metrics["observaciones"]["duplicados_origen"] = (Import-Csv $csvHermeticidad | Measure-Object).Count
-
-# Obtener CPMS derivado en estancias
-$sqlDerivado = "
-SELECT 'emergencia' AS tipo, COUNT(*) FROM temp_emergencia_sigesapol_estancia WHERE es_cpms_derivado = true
-UNION ALL
-SELECT 'hospitalizacion', COUNT(*) FROM temp_hospitalizacion_sigesapol_estancia WHERE es_cpms_derivado = true;
-"
-$resDerivado = & $psqlPath -U postgres -d db_cpt_junio26 -A -t -c $sqlDerivado
-foreach ($line in ($resDerivado -split "`r`n|`n")) {
-    if ($line -match "^([^|]+)\|(\d+)$") {
-        $metrics["observaciones"]["cpms_derivado_" + $Matches[1]] = [int]$Matches[2]
-    }
-}
-
-# Guardar metricas.json
-$jsonStr = ConvertTo-Json $metrics -Depth 10
-[System.IO.File]::WriteAllText("$expPath/metricas.json", $jsonStr, (New-Object System.Text.UTF8Encoding $false))
-
-# Generar la Hoja de Estancias para Auditoria (Excel)
-Write-Output "Generando Hoja de Estancias para Auditoria..."
-python "$PSScriptRoot\generate_hoja_estancias.py" --year $Year --month $Month | Out-Null
 
 Write-Output "=========================================================="
-Write-Output "PERIODO FINALIZADO EXITOSAMENTE: $Year-$MonthPad"
-Write-Output "Duplicados evitados: $($metrics["deduplicacion"]["duplicados_ciertos"])"
-Write-Output "Monto evitado: S/. $($metrics["deduplicacion"]["monto_evitado_doble_cobro"])"
+Write-Output "PERIODO MENSUAL PROCESADO EXITOSAMENTE: $Year-$MonthPad"
 Write-Output "=========================================================="

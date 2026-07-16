@@ -24,14 +24,33 @@
 -- trazabilidad en el Excel.
 -- ============================================================================
 
--- ==================== CONFIGURAR FUENTE CANÓNICA AQUÍ ======================
+-- =========== FUENTE CANÓNICA: derivada de cfg_fuente_canonica ==============
+-- Ya NO se edita a mano. Se deriva del período activo en cfg_periodo contra
+-- las vigencias registradas en cfg_fuente_canonica (ver CONTEXTO_CANONICO.md,
+-- regla inmutable #1, y Parte 2 de 00_RUTA_jul_dic_2025.md). Si la tabla no
+-- existe o el período no tiene vigencia definida, esto falla con RAISE
+-- EXCEPTION en vez de asumir un valor por defecto.
 DROP TABLE IF EXISTS cfg_canonico;
 CREATE TABLE cfg_canonico AS
-SELECT 'SIGESAPOL'::text AS fuente;   -- <== 'CPT' (jul-sep 2025) | 'SIGESAPOL' (oct-dic 2025)
+SELECT fuente::text AS fuente
+FROM cfg_fuente_canonica
+WHERE (SELECT p_ini FROM cfg_periodo) BETWEEN periodo_desde AND COALESCE(periodo_hasta, DATE '9999-12-31');
 -- ============================================================================
 
 DO $$
+DECLARE
+	v_matches integer;
 BEGIN
+	IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='cfg_fuente_canonica') THEN
+		RAISE EXCEPTION 'Falta cfg_fuente_canonica. Correr 00_INSTALAR_post_restauracion_CPT.sql primero.';
+	END IF;
+	SELECT COUNT(*) INTO v_matches FROM cfg_fuente_canonica
+	WHERE (SELECT p_ini FROM cfg_periodo) BETWEEN periodo_desde AND COALESCE(periodo_hasta, DATE '9999-12-31');
+	IF v_matches = 0 THEN
+		RAISE EXCEPTION 'El período de cfg_periodo (p_ini=%) no tiene vigencia definida en cfg_fuente_canonica.', (SELECT p_ini FROM cfg_periodo);
+	ELSIF v_matches > 1 THEN
+		RAISE EXCEPTION 'El período de cfg_periodo (p_ini=%) matchea % vigencias en cfg_fuente_canonica (deben ser disjuntas).', (SELECT p_ini FROM cfg_periodo), v_matches;
+	END IF;
 	IF (SELECT fuente FROM cfg_canonico) NOT IN ('CPT','SIGESAPOL') THEN
 		RAISE EXCEPTION 'cfg_canonico.fuente debe ser CPT o SIGESAPOL';
 	END IF;
