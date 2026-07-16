@@ -47,7 +47,7 @@ SELECT
 	'3'::text AS sp_tipo_atencion, -- hospitalización
 	es.codigo AS sp_codigo_ipress,
 	es.nombre AS sp_nombre_ipress,
-	COALESCE(h.fecha_atencion, h.fecha_ingreso, h.created_at)::date AS sp_fecha_atencion,
+	COALESCE(h.fecha_ingreso, h.fecha_atencion, h.created_at)::date AS sp_fecha_atencion,
 	h.fecha_alta_medica::date AS sp_fecha_alta,
 
 	(CASE WHEN m.tipo_documento IS NULL THEN '1' ELSE m.tipo_documento END)::varchar AS sp_tipo_documento_responsable,

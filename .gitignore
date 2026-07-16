@@ -1,3 +1,6 @@
-﻿tramas_exportadas/
+tramas_exportadas/
 bases_extraidas_sigesapol_cpt/
+expedientes/
 *.zip
+__pycache__/
+*.pyc

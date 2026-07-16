@@ -19,7 +19,7 @@ WHERE (sp_fecha_alta_emergencia - sp_fecha_atencion) > INTERVAL '24 hours';
 
 -- 3. CASO A: Unión de Estancias Solapadas / Contiguas
 -- Expandir la estancia de hospitalización existente en temp_hospitalizacion_local
--- que se toca o solapa con la emergencia > 24h (excluyendo CIERRE ADMINISTRATIVO).
+-- que se toca o solapa con la emergencia (excluyendo CIERRE ADMINISTRATIVO).
 -- Primero actualizamos las fechas de ingreso y egreso, digitador y origen
 UPDATE temp_hospitalizacion_local h
 SET 
@@ -32,9 +32,16 @@ WHERE h.sp_numero_documento_paciente = e.sp_numero_documento_paciente
   AND e.sp_fecha_atencion::date <= h.sp_fecha_alta::date
   AND e.sp_fecha_alta_emergencia::date >= h.sp_fecha_atencion::date
   -- Excluir CIERRE ADMINISTRATIVO (>15 días y cambio de mes)
-  AND NOT (TO_CHAR(e.sp_fecha_atencion, 'YYYY-MM') <> TO_CHAR(e.sp_fecha_alta_emergencia, 'YYYY-MM') AND (date(e.sp_fecha_alta_emergencia) - date(e.sp_fecha_atencion) + 1) > 15)
-  -- Solo emergencias > 24h
-  AND (e.sp_fecha_alta_emergencia - e.sp_fecha_atencion) > INTERVAL '24 hours';
+  AND NOT (TO_CHAR(e.sp_fecha_atencion, 'YYYY-MM') <> TO_CHAR(e.sp_fecha_alta_emergencia, 'YYYY-MM') AND (date(e.sp_fecha_alta_emergencia) - date(e.sp_fecha_atencion) + 1) > 15);
+
+-- Marcar excluir_tipo2 = true para TODAS las emergencias unidas (incluso las <= 24h)
+UPDATE temp_emergencia_sigesapol_estancia e
+SET excluir_tipo2 = true
+FROM temp_hospitalizacion_local h
+WHERE h.sp_numero_documento_paciente = e.sp_numero_documento_paciente
+  AND e.sp_fecha_atencion::date <= h.sp_fecha_alta::date
+  AND e.sp_fecha_alta_emergencia::date >= h.sp_fecha_atencion::date
+  AND NOT (TO_CHAR(e.sp_fecha_atencion, 'YYYY-MM') <> TO_CHAR(e.sp_fecha_alta_emergencia, 'YYYY-MM') AND (date(e.sp_fecha_alta_emergencia) - date(e.sp_fecha_atencion) + 1) > 15);
 
 -- Recalcular días de estancia y valorización para las estancias unidas
 UPDATE temp_hospitalizacion_local h

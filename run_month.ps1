@@ -269,6 +269,10 @@ foreach ($line in ($resDerivado -split "`r`n|`n")) {
 $jsonStr = ConvertTo-Json $metrics -Depth 10
 [System.IO.File]::WriteAllText("$expPath/metricas.json", $jsonStr, (New-Object System.Text.UTF8Encoding $false))
 
+# Generar la Hoja de Estancias para Auditoria (Excel)
+Write-Output "Generando Hoja de Estancias para Auditoria..."
+python "$PSScriptRoot\generate_hoja_estancias.py" --year $Year --month $Month | Out-Null
+
 Write-Output "=========================================================="
 Write-Output "PERIODO FINALIZADO EXITOSAMENTE: $Year-$MonthPad"
 Write-Output "Duplicados evitados: $($metrics["deduplicacion"]["duplicados_ciertos"])"

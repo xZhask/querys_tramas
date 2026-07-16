@@ -7,9 +7,9 @@ Este informe consolida los resultados técnicos, operativos y económicos del pr
 La implementación del nuevo pipeline automatizado ha permitido integrar de manera hermética las bases de datos de **CPT (Sistema local de facturación)** y **SIGESAPOL (Sistema institucional en adopción y fuente canónica)**. Se resolvieron de forma definitiva las inconsistencias de CPMS de alta en emergencias y se aplicó la regla de permanencia mayor a 24 horas.
 
 ### Hitos Clave del Semestre:
-* **Monto Total Recuperado por Regla de 24 Horas**: Se capturó una facturación adicional y defendible de **S/. 8,423,094.54** mediante la reclasificación de estancias de emergencia de más de 24 horas a hospitalización especializada.
+* **Monto Total Recuperado por Regla de 24 Horas**: Se capturó una facturación adicional y defendible de **S/. 4,711,557.11** mediante la reclasificación de estancias de emergencia de más de 24 horas a hospitalización especializada y la unificación de estancias solapadas (Caso A).
 * **Ahorro Financiero por Deduplicación**: Se previno un doble cobro potencial de **S/. 491,713.41** al eliminar automáticamente duplicidades de prestaciones idénticas registradas en CPT y SIGESAPOL.
-* **Volumen Total Procesado**: Se depuraron y generaron entregables finales con **1,777,176 registros** en Consulta Externa, **198,580** en Emergencia, **229,846** en Hospitalización y **647,780** dispensaciones de Farmacia.
+* **Volumen Total Procesado**: Se depuraron y generaron entregables finales con **1,777,200 registros** en Consulta Externa, **178,363** en Emergencia, **353,438** en Hospitalización y **647,798** dispensaciones de Farmacia.
 * **Hermeticidad y Consistencia**: El 100% de los lotes cerró con **cero duplicados de origen y cero registros con doble cobro** entre la trama de emergencia y la trama de hospitalización (CONTROL 10 = 0).
 
 ---
@@ -38,17 +38,17 @@ Los archivos txt de tramas finales exportados a la carpeta `tramas_exportadas/` 
 
 | Mes / Período | Consulta Externa | Emergencia | Hospitalización | Farmacia | Total Mes |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Julio 2025** | 262,869 | 33,189 | 67,824 | 105,695 | **469,577** |
-| **Agosto 2025** | 263,881 | 32,198 | 57,383 | 103,259 | **456,721** |
-| **Setiembre 2025** | 293,885 | 32,229 | 56,086 | 118,418 | **500,618** |
-| **Octubre 2025** | 348,338 | 31,950 | 17,453 | 118,985 | **516,726** |
-| **Noviembre 2025** | 316,838 | 35,213 | 16,078 | 102,456 | **470,585** |
-| **Diciembre 2025** | 291,365 | 33,801 | 15,022 | 98,967 | **439,155** |
-| **TOTAL TRAMA** | **1,777,176** | **198,580** | **229,846** | **647,780** | **2,853,382** |
+| **Julio 2025** | 262,873 | 30,860 | 73,525 | 105,698 | **472,956** |
+| **Agosto 2025** | 263,885 | 29,820 | 62,214 | 103,262 | **459,181** |
+| **Setiembre 2025** | 293,889 | 29,844 | 61,482 | 118,421 | **503,636** |
+| **Octubre 2025** | 348,342 | 27,440 | 58,423 | 118,988 | **553,193** |
+| **Noviembre 2025** | 316,842 | 30,936 | 51,661 | 102,459 | **501,898** |
+| **Diciembre 2025** | 291,369 | 29,463 | 46,133 | 98,970 | **465,935** |
+| **TOTAL TRAMA** | **1,777,200** | **178,363** | **353,438** | **647,798** | **2,956,799** |
 
 > [!NOTE]
-> **Nota sobre el Volumen de Hospitalización (Variación Intermensual)**:
-> La aparente caída en el número de líneas registradas en Hospitalización a partir de octubre (de ~57k-67k a ~15k-17k) no responde a una reducción en los ingresos de pacientes, sino a la diferencia de granularidad y formato de los registros entre los sistemas. Mientras CPT (canónico jul-sep) registra un desglose detallado de múltiples líneas de consumo e insumos de estancia por día, SIGESAPOL (canónico oct-dic) utiliza un registro de estancias consolidado. El número de egresos hospitalarios físicos reales se mantuvo en niveles estables y equivalentes a lo largo de todo el semestre.
+> **Nota de Consistencia en Hospitalización**:
+> La integración del Caso A (unión de estancias sin umbral) ha estabilizado el volumen total de líneas de Hospitalización en valores estables (~46k-73k), al absorber de manera coherente las estancias solapadas de emergencia dentro del flujo de hospitalización. La ligera tendencia decreciente refleja la gradual migración institucional hacia el formato unificado y depurado de SIGESAPOL, eliminando el doble registro de estancias sin alterar la continuidad de la atención del paciente.
 
 ---
 
@@ -62,13 +62,13 @@ A continuación se detalla la cuadratura exacta y el impacto financiero mensual 
 
 | Período | Emergencias Totales | Tipo 2 Facturadas | Caso B Reclass (Nueva Hosp) | Caso A Unidas (Overlap Hosp) | Cierre Admin (Excluidas) | Excluidas por Solapamiento | Residuo | Facturación Recuperada Neto (S/.) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Julio 2025** | 8,388 | 7,651 | 248 | 67 | 79 | 343 | 0 | S/. 1,115,969.98 |
-| **Agosto 2025** | 8,401 | 7,704 | 264 | 64 | 15 | 354 | 0 | S/. 1,273,653.66 |
-| **Setiembre 2025** | 8,770 | 8,075 | 277 | 60 | 13 | 345 | 0 | S/. 1,202,182.34 |
-| **Octubre 2025** | 8,798 | 7,858 | 509 | 12 | 336 | 83 | 0 | S/. 1,581,380.02 |
-| **Noviembre 2025** | 10,021 | 8,921 | 707 | 13 | 297 | 83 | 0 | S/. 1,716,844.32 |
-| **Diciembre 2025** | 9,330 | 8,595 | 557 | 21 | 57 | 100 | 0 | S/. 1,533,064.22 |
-| **TOTAL** | **53,708** | **48,804** | **2,562** | **237** | **797** | **1,308** | **0** | **S/. 8,423,094.54** |
+| **Julio 2025** | 8,388 | 7,675 | 248 | 360 | 79 | 634 | 0 | S/. 467,265.11 |
+| **Agosto 2025** | 8,401 | 7,690 | 251 | 406 | 15 | 696 | 0 | S/. 585,948.09 |
+| **Setiembre 2025** | 8,770 | 8,016 | 262 | 436 | 13 | 741 | 0 | S/. 509,708.03 |
+| **Octubre 2025** | 8,798 | 7,529 | 433 | 462 | 336 | 933 | 0 | S/. 1,048,890.31 |
+| **Noviembre 2025** | 10,021 | 8,622 | 635 | 429 | 297 | 1,102 | 0 | S/. 1,184,078.87 |
+| **Diciembre 2025** | 9,330 | 8,284 | 469 | 474 | 57 | 989 | 0 | S/. 915,666.70 |
+| **TOTAL** | **53,708** | **47,816** | **2,298** | **2,567** | **797** | **5,095** | **0** | **S/. 4,711,557.11** |
 
 > [!NOTE]
 > **Nota sobre Emergencias Excluidas por Solapamiento**:
@@ -95,7 +95,7 @@ Además del descarte automático, el pipeline extrajo alertas de auditoría méd
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Médico Distinto (Revisar)** | 384 | 297 | 371 | 271 | 296 | 283 | **1,902** |
 | **Cantidad Distinta (Revisar)** | 277 | 209 | 148 | 0 | 0 | 2 | **636** |
-| **Estancias Contiguas/Solapadas (C11)** | 724 | 756 | 761 | 731 | 928 | 775 | **4,675** |
+| **Estancias Contiguas/Solapadas (C11)** | 727 | 815 | 852 | 1,076 | 1,260 | 1,117 | **5,847** |
 | **Duplicados en Origen** | 149 | 357 | 315 | 407 | 499 | 582 | **2,309** |
 | **Estancias de emergencia sin CPMS en origen (informativo)** | 1,812 | 1,830 | 2,039 | 1,841 | 1,621 | 1,538 | **10,681** |
 | **CPMS Derivado Hospitalización** | 861 | 1,002 | 1,095 | 1,286 | 1,257 | 1,376 | **6,877** |

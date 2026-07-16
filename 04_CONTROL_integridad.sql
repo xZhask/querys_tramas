@@ -298,3 +298,24 @@ JOIN hospitalization_reported hr
  AND er.codigo = hr.codigo;
 
 
+-- ============================================================
+-- CONTROL 12: Emergencias con circunstancia de alta = transferencia/hospitalización
+-- SIN hospitalización registrada que las reciba (CPT ni SIGESAPOL)
+-- ============================================================
+SELECT 
+	e.sp_numero_documento_paciente AS documento,
+	e.sp_apellido_paterno_paciente, e.sp_nombres_paciente,
+	e.sp_fecha_atencion::date        AS emerg_ingreso,
+	e.sp_fecha_alta_emergencia::date AS emerg_alta,
+	e.sp_circunstancia_alta_sigesapol_sp AS circunstancia_alta,
+	e.condicion_alta AS circunstancia_alta_saludpol
+FROM temp_emergencia_sigesapol_estancia e
+WHERE e.condicion_alta = 3 -- 3 = TRANSFERIDO/HOSPITALIZACION en SALUDPOL
+  AND NOT EXISTS (
+	SELECT 1
+	FROM temp_hospitalizacion_local h
+	WHERE h.sp_numero_documento_paciente = e.sp_numero_documento_paciente
+	  AND e.sp_fecha_atencion::date <= h.sp_fecha_alta::date
+	  AND e.sp_fecha_alta_emergencia::date >= h.sp_fecha_atencion::date
+  )
+ORDER BY documento, emerg_ingreso;
