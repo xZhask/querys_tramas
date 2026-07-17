@@ -4,3 +4,5 @@ expedientes/
 *.zip
 __pycache__/
 *.pyc
+aplicativo/vendor/
+_referencia_piloto_v2_*/
