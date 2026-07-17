@@ -179,6 +179,57 @@ def check_a2(exp_dir, infos_dir, tramas_dir, period):
     return True
 
 
+def load_trama_values(filepath, cols, col_name):
+    if col_name not in cols:
+        return None
+    idx = cols.index(col_name)
+    valores = set()
+    if not os.path.exists(filepath):
+        return valores
+    with open(filepath, "rb") as f:
+        data = f.read().decode("utf-8")
+    sep = "|\r\n" if "|\r\n" in data else "|\n"
+    for rec in data.split(sep):
+        if not rec.strip():
+            continue
+        parts = rec.split("|")
+        if idx < len(parts):
+            valores.add(parts[idx].strip())
+    return valores
+
+
+def check_a4(infos_dir, tramas_dir, period, alcance=("00013591",)):
+    cols_path = os.path.join(infos_dir, ".trama_columns.json")
+    if not os.path.exists(cols_path):
+        print(f"A4 [{period}]: FALLO - no existe {cols_path}")
+        return False
+    with open(cols_path, "r", encoding="utf-8") as f:
+        trama_cols = json.load(f)
+
+    archivos = {
+        "consulta": ("trama_consulta_externa.txt", "sp_codigo_ipress"),
+        "emergencia": ("trama_emergencia.txt", "sp_codigo_ipress"),
+        "hospitalizacion": ("trama_hospitalizacion.txt", "sp_codigo_ipress"),
+        "farmacia": ("trama_farmacia.txt", "ipress_codigo"),
+    }
+    alcance_set = set(alcance)
+    ok = True
+    for tipo, (fname, col_name) in archivos.items():
+        cols = trama_cols.get(tipo, [])
+        valores = load_trama_values(os.path.join(tramas_dir, fname), cols, col_name)
+        if valores is None:
+            print(f"A4 [{period}]: FALLO - columna '{col_name}' no encontrada en {fname}")
+            ok = False
+            continue
+        fuera_de_alcance = valores - alcance_set
+        if fuera_de_alcance:
+            print(f"A4 [{period}]: FALLO - {fname} tiene codigo_ipress fuera de alcance: {sorted(fuera_de_alcance)}")
+            ok = False
+    if ok:
+        print(f"A4 [{period}]: PASS (unico codigo_ipress presente en las 4 tramas: {sorted(alcance_set)})")
+    return ok
+
+
 def blank_decisions(audit_path):
     """Vacia la columna DECISION_AUDITORIA (T, col 20) en las 4 hojas de decision.
     Un libro 'vacio (todo pendiente)' significa celdas en blanco: el propio
@@ -295,12 +346,13 @@ def main():
     infos_dir = os.path.join(exp_dir, "03_INFORMATIVOS")
     audit_path = os.path.join(exp_dir, f"02_AUDITORIA_{period}.xlsx")
 
-    print(f"=== Verificando aserciones A1/A2/A3 para {period} ===")
+    print(f"=== Verificando aserciones A1/A2/A3/A4 para {period} ===")
     results = [
         check_a1(infos_dir, period, allow_missing=args.allow_missing_conservacion),
         check_a2(exp_dir, infos_dir, tramas_dir, period),
         check_a3_ciclo(exp_dir, tramas_dir, audit_path, year, month, period),
         check_a3_control10(year, month, period, args.skip_control10),
+        check_a4(infos_dir, tramas_dir, period),
     ]
 
     if all(results):

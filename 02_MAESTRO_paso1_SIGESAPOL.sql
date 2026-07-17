@@ -18,8 +18,8 @@
 -- ========================= CONFIGURAR PERÍODO AQUÍ =========================
 DROP TABLE IF EXISTS cfg_periodo;
 CREATE TABLE cfg_periodo AS
-SELECT DATE '2025-07-01' AS p_ini,   -- <== inicio del periodo
-       DATE '2025-07-31' AS p_fin;   -- <== fin del período
+SELECT DATE '2025-12-01' AS p_ini,   -- <== inicio del periodo
+       DATE '2025-12-31' AS p_fin;   -- <== fin del período
 -- ============================================================================
 
 
@@ -160,6 +160,9 @@ SELECT
   and e.estado = 5   -- FIX: solo emergencias válidas/cerradas (CHECK 14)
   and e.fecha_alta_medica::date between (SELECT p_ini FROM cfg_periodo)
                                     and (SELECT p_fin FROM cfg_periodo)
+  -- ALCANCE: solo Hospital Luis N. Sáenz (ver CONTEXTO_CANONICO.md §1).
+  -- Filtro por ID de establecimiento, nunca por nombre (dos grafías legítimas).
+  and es.id = (SELECT id_establecimiento_sigesapol FROM cfg_ipress_alcance)
 
 Group by
 a.tipo_doc_ident, a.nro_doc_ident, a.paterno, a.materno, a.nombre,
@@ -174,6 +177,26 @@ e.id, a.id,
 d1.codigo, d1.nombre, d2.codigo, d2.nombre, d3.codigo, d3.nombre
 
 order by a.id;
+
+
+-- ============================================================================
+-- ALCANCE: constancia de lo depurado por IPRESS (ver CONTEXTO_CANONICO.md §3)
+-- ============================================================================
+DELETE FROM log_alcance_depurado
+ WHERE periodo_ini = (SELECT p_ini FROM cfg_periodo)
+   AND periodo_fin = (SELECT p_fin FROM cfg_periodo)
+   AND tabla = 'temp_emergencia_sigesapol_estancia';
+
+INSERT INTO log_alcance_depurado (periodo_ini, periodo_fin, tabla, codigo_ipress, nombre_ipress, filas_removidas)
+SELECT (SELECT p_ini FROM cfg_periodo), (SELECT p_fin FROM cfg_periodo),
+       'temp_emergencia_sigesapol_estancia', es.codigo, es.nombre, COUNT(*)
+FROM emergencias e
+INNER JOIN establecimientos es ON es.id = e.id_establecimiento
+WHERE e.fecha_alta_medica IS NOT NULL
+  AND e.estado = 5
+  AND e.fecha_alta_medica::date BETWEEN (SELECT p_ini FROM cfg_periodo) AND (SELECT p_fin FROM cfg_periodo)
+  AND es.id <> (SELECT id_establecimiento_sigesapol FROM cfg_ipress_alcance)
+GROUP BY es.codigo, es.nombre;
 
 
 -- Verificación rápida post-creación:

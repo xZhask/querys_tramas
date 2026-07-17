@@ -73,47 +73,70 @@
      entran a RETENIDA — RETENIDA es solo para lo que necesita revisión
      humana.
 
+9. **Alcance nivel III — EXCLUSIVAMENTE Hospital Luis N. Sáenz (LNS)**: este
+   generador cubre solo el HN PNP LNS (`codigo_ipress` SIGESAPOL `00013591`,
+   `id_establecimiento_sigesapol` 76). Las demás IPRESS (nivel I/II de la red
+   PNP) las trabaja otro equipo con otra base. El filtro es **siempre** por
+   código/ID de establecimiento — **nunca por nombre** (LNS tiene dos grafías
+   legítimas en origen, "LUIS N SAENZ" y "LUIS N. SAENZ", ambas dentro de
+   alcance). El dato vive en `cfg_ipress_alcance` (duplicada en ambas BD,
+   mismo patrón que `cfg_periodo`) — los filtros de extracción leen de ahí,
+   cero literales dispersos. *Justificación: CPT y SIGESAPOL son sistemas de
+   toda la red PNP, no solo de LNS; sin este filtro, las tramas incluían
+   consultas/emergencias/hospitalizaciones/laboratorios de otros hospitales
+   (Legía, Arequipa, Chiclayo, San José y otros), que otro equipo debe
+   facturar con otra base — ver §3, entrada 2026-07-17.*
+
 ---
 
 ## 2. NÚMEROS CANÓNICOS VERIFICADOS
 
+> **Cobertura de estos números: EXCLUSIVAMENTE HN PNP Luis N. Sáenz (nivel
+> III), `codigo_ipress` 00013591.** Regenerados el 2026-07-17 con el pipeline
+> completo (jul-dic) tras aplicar el filtro de alcance (regla inmutable §1.9).
+> Los números previos de esta tabla (versión multi-IPRESS, incluían Legía,
+> Arequipa, Chiclayo, San José y otras ~30 IPRESS menores) quedan en el punto
+> 6 de la nota de abajo como referencia histórica — **no usar para facturar**.
+
 | Métrica | Valor | Estado |
 | --- | --- | --- |
-| Doble cobro evitado, semestre completo (jul-dic 2025) | **S/. 491,713.41** (9,796 duplicados ciertos) | Verificado — coincide con §2 de `INFORME_CIERRE_SEMESTRE.md` |
-| Recuperación neta por regla 24h, semestre completo (jul-dic 2025), **metodología corregida con snapshot pre-Caso-A** | **S/. 6,879,013.18** | Verificado por `CONTROL 14` — reemplaza tanto el 4,711,557.11 del cierre anterior como el ancla previa de julio (1,109,812.71, ver nota) |
-| Julio 2025, recuperación neta por regla 24h (metodología corregida) | **S/. 562,337.47** | Verificado por `CONTROL 14` — ver nota sobre por qué reemplaza a 1,109,812.71 |
-| Partición Sección 4 (Tipo2+CasoA+CasoB+CierreAdmin=Total, residuo 0) | Semestre: 47,816+2,797+2,298+797=53,708 | Verificado por `CONTROL 13`, residuo 0 en los 6 meses |
-| Cuadratura C1 (= aserción A1 de conservación: LIMPIA + RETENIDA + INFORMATIVA = total extraído) | Cierra en **residuo 0** por mes y por tipo de trama, los 6 meses incluyendo julio | Verificado — las 3 aserciones (A1/A2/A3) están en OK para los 6 meses |
-| Benchmark de eficiencia vs. proceso manual | **91.5%** | coincidencia de pares E→H vs proceso manual (ver `COMPARATIVO_FINAL_EXPOSICION.txt` para evidencia de rendimiento asociada) |
-| Atenciones Tipo 2 (Emergencia) facturadas (CONTROL 15) | **47,816** atenciones / **S/. 1,585,426.27** | Verificado por CONTROL 15 en los 6 meses (Jul-Dic 2025) |
+| Doble cobro evitado, semestre completo (jul-dic 2025) | **S/. 490,401.29** (9,761 duplicados ciertos) | Verificado — coincide con §2 de `INFORME_CIERRE_SEMESTRE.md`, suma de `metricas.json.deduplicacion` de los 6 meses |
+| Recuperación neta por regla 24h, semestre completo (jul-dic 2025), **metodología corregida con snapshot pre-Caso-A** | **S/. 4,873,686.93** | Verificado por `CONTROL 14` (04_CONTROL_integridad.sql, paso 9), suma de `recuperacion_neta_estancias` de los 6 meses |
+| Julio 2025, recuperación neta por regla 24h (metodología corregida) | **S/. 513,587.46** | Verificado por `CONTROL 14`, `expedientes/2025-07/03_INFORMATIVOS/controles_integridad_raw.txt` |
+| Partición Sección 4 (Tipo2+CasoA+CasoB+CierreAdmin=Total, residuo 0) | Semestre: 29,000+2,274+1,436+793=33,503 | Verificado por `CONTROL 13`, residuo 0 en los 6 meses |
+| Cuadratura C1 (= aserción A1 de conservación: LIMPIA + RETENIDA + INFORMATIVA = total extraído) | Cierra en **residuo 0** por mes y por tipo de trama, los 6 meses | Verificado — las 4 aserciones (A1/A2/A3/A4) están en OK para los 6 meses |
+| Benchmark de eficiencia vs. proceso manual | **No recalculado bajo alcance LNS** | La hoja manual de julio (fuente del 91.5%/8,388 vs 5,441) no es un artefacto de este repositorio — no se puede recomputar la coincidencia sin ella. Dato indirecto: el conteo de pares Caso A (E→H) bajó de 2,797 a 2,274 (**-18.7%**, semestre), en línea con la magnitud de la depuración por alcance — ver punto 7 de la nota |
+| Atenciones Tipo 2 (Emergencia) facturadas (CONTROL 15) | **29,000** atenciones / **S/. 1,009,347.62** | Verificado por CONTROL 15 en los 6 meses (Jul-Dic 2025) |
+| Alcance depurado (filas removidas en extracción por IPRESS fuera de LNS, semestre) | SIGESAPOL: 608,580 filas · CPT (laboratorio, join real a establecimiento_medico): 542 filas / S/. 9,757.61 | `log_alcance_depurado` en ambas BD — ver §3, entrada 2026-07-17, y `INFORME_CIERRE_SEMESTRE.md` para el detalle por mes/tabla |
 
 > **Resultado final de la Parte 1** (todo verificado por query contra la BD
-> viva, pipeline completo jul-dic re-corrido tres veces con cada fix aplicado):
+> viva, pipeline completo jul-dic re-corrido tres veces con cada fix aplicado
+> — **valores multi-IPRESS, superados por el alcance LNS de la Parte 3, ver
+> punto 6/7 abajo**):
 >
 > 1. **Partición Sección 4**: la tabla del cierre anterior sumaba más que el
 >    total porque "Excluidas por Solapamiento" duplicaba población ya
 >    contada en "Caso A Unidas". `CONTROL 13` deriva las 4 categorías de
 >    forma independiente y confirma residuo 0 los 6 meses. El Caso A real
->    semestral es **2,797**, no 2,567 (la cifra vieja subcontaba por ~230,
->    repartido de forma desigual por mes).
+>    semestral era **2,797** (multi-IPRESS), no 2,567 (la cifra vieja
+>    subcontaba por ~230, repartido de forma desigual por mes).
 > 2. **Recuperación Neta**: el primer intento de recalcular por diffs
 >    antes/después (sin snapshot) daba ~10.06M — sobrestimado, porque
 >    contaba el valor COMPLETO de una estancia Caso A como ganancia, no solo
 >    el incremento de días. Se corrigió con un snapshot de la valorización
 >    hospitalaria tomado en `12_RECLASIFICAR_emergencias_24h.sql` ANTES de
->    unir/insertar nada (`CONTROL 14`). Resultado final: **S/. 6,879,013.18**
->    para el semestre, **S/. 562,337.47** para julio.
+>    unir/insertar nada (`CONTROL 14`). Resultado (multi-IPRESS): **S/.
+>    6,879,013.18** para el semestre, **S/. 562,337.47** para julio.
 > 3. **Sobre 1,109,812.71** (la cifra ancla que este documento tenía): se
 >    confirmó que salía de sumar el diff antes/después de `diff_tramas.md`
 >    (hospitalización +1,477,173.28, emergencia -367,360.57), un checkpoint
 >    ANTERIOR del pipeline que tenía EXACTAMENTE el mismo problema de
 >    medición recién descrito (contaba el valor completo de la estancia
 >    Caso A, no el incremento) — por eso esa cifra ya no es la referencia
->    correcta; se reemplaza por 562,337.47.
+>    correcta.
 > 4. **Sobre el 4,711,557.11 y el "8.42M"** mencionados como totales previos:
 >    ningún artefacto en el repositorio reproduce ninguno de los dos — no
->    hay query de origen preservada para ellos. Se reemplazan por la cifra
->    verificada de este cierre.
+>    hay query de origen preservada para ellos.
 > 5. **Sobre la sospecha PERMANENCIA_EN_EMERGENCIA**: descartada. Esa
 >    etiqueta (con "EN",
 >    `expedientes/correccion_cpms/estancias_emergencia_no_facturadas.md`) es
@@ -121,6 +144,27 @@
 >    de cruce de medianoche), distinta de `PERMANENCIA_EMERGENCIA_24H` (sin
 >    "EN") que usa el pipeline actual. Ningún total en esa fuente reproduce
 >    4,711,557.11.
+> 6. **Sobre el alcance (2026-07-17)**: los valores de los puntos 1-2 arriba
+>    (2,797 pares Caso A, S/. 6,879,013.18 de recuperación neta, 47,816
+>    atenciones Tipo 2 / S/. 1,585,426.27) incluían **toda la red PNP** (CPT y
+>    SIGESAPOL cubren Legía, Arequipa, Chiclayo, San José y ~30 IPRESS
+>    menores además de LNS), porque ninguna extracción filtraba por
+>    establecimiento — o filtraba por la *historia* del paciente en vez de
+>    por la *sede de la prestación* (ver `06_FASE2_SIGESAPOL_procedimientos.sql`,
+>    fix historia-vs-prestación: 587,060 prestaciones del semestre tenían
+>    historia en LNS pero ocurrieron en otro establecimiento). Quedan
+>    reemplazados por los valores LNS-only de la tabla de arriba.
+> 7. **Magnitud de la depuración por categoría** (multi-IPRESS → LNS-only,
+>    semestre): Tipo 2 facturadas -39.3% (47,816→29,000); recuperación neta
+>    24h -29.2% (6,879,013.18→4,873,686.93); pares Caso A -18.7%
+>    (2,797→2,274); doble cobro evitado -0.4% (491,713.41→490,401.29,
+>    prácticamente sin cambio porque `prestacion_cpt` — la fuente CPT de los
+>    duplicados ciertos — ya era LNS-only por construcción, sin columna de
+>    establecimiento); volumen total de líneas de trama -20.1%
+>    (2,956,003→2,362,795). La cifra "~19%" que motivó este cambio (ver
+>    misión) es cercana a la magnitud real, pero varía bastante por
+>    categoría — de -0.4% a -39.3% — así que no debe usarse como un factor
+>    de conversión único.
 
 ---
 
@@ -208,6 +252,56 @@
   2. Regla 5: Se actualizó la justificación real para prioridad IV (no genera estancia, cpms_alta es siempre vacío por diseño de SIGESAPOL, 99281 es consulta de baja complejidad).
   3. Benchmark: Descrito como "coincidencia de pares E→H vs proceso manual" (91.5%).
   4. CONTROL 15: Concilió las 47,816 atenciones Tipo 2 facturadas acumulando un monto valorizado de S/. 1,585,426.27 en el semestre.
+- **2026-07-17 — Alcance nivel III: EXCLUSIVAMENTE Hospital Luis N. Sáenz**
+  (regla inmutable §1.9): decisión de equipo — este generador cubre solo el
+  HN PNP LNS (`codigo_ipress` 00013591 / `id_establecimiento_sigesapol` 76);
+  las demás IPRESS de la red PNP (Legía, Arequipa, Chiclayo, San José y
+  ~30 más) las trabaja otro equipo con otra base. Motivo: verificado en vivo
+  que CPT y SIGESAPOL son sistemas de red completa, no solo de LNS, y que
+  ninguna extracción filtraba por establecimiento (emergencias, hospitalización
+  SIGESAPOL) o filtraba por la *historia* del paciente en vez de por la
+  *sede de la prestación* (procedimientos SIGESAPOL — 587,060 prestaciones
+  del semestre con historia en LNS pero ocurridas en otro establecimiento).
+  Cambios:
+  1. Tabla `cfg_ipress_alcance` (codigo_ipress, id_establecimiento_sigesapol,
+     descripcion) agregada a ambos instaladores post-restauración (CPT y
+     SIGESAPOL, duplicada por el mismo motivo que `cfg_periodo`). Los
+     filtros de extracción leen de ahí — cero literales nuevos dispersos
+     (se migró también el literal `76` preexistente de `12_SIGESAPOL_farmacia.sql`).
+  2. Filtro agregado a `02_MAESTRO_paso1_SIGESAPOL.sql` (emergencias),
+     `05_FASE2_paso1b_SIGESAPOL_hospitalizacion.sql` (hospitalización, no
+     filtraba nada antes) y `06_FASE2_SIGESAPOL_procedimientos.sql`
+     (procedimientos, ahora por `pre.id_establecimiento`, no por la historia).
+  3. En CPT, `03_MAESTRO_paso2_CPT.sql` filtra el resultado ya materializado
+     de las 7 tablas `temp_*` (las funciones originales `sp_hospitalizacion_en_periodo`
+     / `sp_procedimientos_segun_tipo_atencion` no se tocan porque leen de
+     `prestacion_cpt`, tabla sin columna de establecimiento — ya es LNS-only
+     por construcción, verificado; el filtro ahí es red de seguridad). Donde
+     el filtro SÍ tiene efecto real es en `sp_laboratorio_segun_tipo_atencion`,
+     que deriva `codigo_ipress` con un join genuino a `establecimiento_medico`
+     porque `prestacion_laboratorio` cubre toda la red.
+  4. Tabla `log_alcance_depurado` (ambas BD) deja constancia de filas/montos
+     removidos por IPRESS antes de cada filtro — ver §2 y el detalle por
+     mes/tabla en `INFORME_CIERRE_SEMESTRE.md`.
+  5. Nueva aserción **A4** (pureza de alcance): `04_CONTROL_integridad.sql`
+     (antes de exportar) y `14_VERIFICAR_ASERTOS.py` (`check_a4`, sobre las
+     4 tramas exportadas) verifican que el único `codigo_ipress` presente
+     sea 00013591; PASS en los 6 meses.
+  6. Fixes de la prueba integral (arrastrados de la instrucción anterior):
+     (a) `format_trama_val()` en `generate_outputs_v2.py` ahora reemplaza
+     `\r`/`\n` embebidos en campos de texto por espacio — el `newline=''` de
+     `write_trama_file` ya evitaba que la escritura los tradujera, pero no
+     los eliminaba del valor; verificado con `wc -l` = filas lógicas en las
+     4 tramas de los 6 meses. (b) El contador `retenida` de la tabla
+     `conservacion` de `metricas.json` ahora suma los pares Caso A
+     (`eh_groups`) y su paquete de procedimientos/laboratorio a
+     `retenida_por_tipo['hospitalizacion']`, y `limpia` resta `retenida`
+     además de `informativa` — antes esos pares se contaban como LIMPIA
+     (facturación aplicada), violando la regla 8. `residuo` sigue en 0 (el
+     fix es de clasificación, no de conservación).
+  7. Pipeline completo jul-dic re-corrido con el alcance aplicado; A1-A4 en
+     PASS los 6 meses. Ver §2 para los números finales y su magnitud de
+     cambio frente a la versión multi-IPRESS.
 
 ---
 

@@ -89,7 +89,7 @@ try {
         2,
         'Re-verificación de aserciones (CONTROL 10 incluido)',
         $ok14 ? 'completado' : 'fallido',
-        $ok14 ? 'Aserciones A1/A2/A3 en PASS tras la reincorporación.' : 'Alguna aserción falló tras reincorporar.',
+        $ok14 ? 'Aserciones A1/A2/A3/A4 en PASS tras la reincorporación.' : 'Alguna aserción falló tras reincorporar.',
         null,
         trim($resultado14['stdout'] . "\n" . $resultado14['stderr']),
         $duracion14

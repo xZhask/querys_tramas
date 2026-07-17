@@ -140,7 +140,7 @@ Group By k.id_nro_movimiento,k.id_producto
 
 where rv.estado=1 And pr.cantidad_dispensada>0 and p.petitorio ='SI'
 
-and e.id = 76
+and e.id = (SELECT id_establecimiento_sigesapol FROM cfg_ipress_alcance) -- ALCANCE: solo Hospital Luis N. Saenz
 
 -- CONSULTA EXTERNA
 and rv.tipo_receta IN ('AMBULATORIO', 'SERVICIO NUTRICIONAL - AMBULATORIO', 'URGENCIA')

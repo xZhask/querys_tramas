@@ -428,9 +428,58 @@ WITH emerg_tipo2_valor AS (
 			END) LIMIT 1), 15.31) AS valor_tipo2
 	FROM temp_emergencia_sigesapol_estancia e
 )
-SELECT 
+SELECT
 	COUNT(*)::int AS emergencias_tipo2_facturadas,
 	COALESCE(SUM(valor_tipo2), 0)::numeric AS monto_valorizado_tipo2
 FROM emerg_tipo2_valor
 WHERE excluir_tipo2 = false;
+
+
+-- ============================================================
+-- ASERCIÓN A4: pureza de alcance (nivel III, solo LNS).
+-- El DISTINCT codigo_ipress de cada tabla que alimenta las tramas exportadas
+-- debe pertenecer exclusivamente a cfg_ipress_alcance (00013591). Si aparece
+-- otro código aquí es que algún filtro de extracción (02/05/06 SIGESAPOL o
+-- 03_MAESTRO_paso2 CPT) no se aplicó o se rompió — DETENER, no exportar.
+-- Debe devolver 0 filas.
+-- ============================================================
+SELECT 'temp_emergencia_sigesapol_estancia' AS tabla, sp_codigo_ipress AS codigo_ipress, COUNT(*) AS filas_fuera_de_alcance
+FROM temp_emergencia_sigesapol_estancia
+WHERE sp_codigo_ipress NOT IN (SELECT codigo_ipress FROM cfg_ipress_alcance)
+GROUP BY sp_codigo_ipress
+UNION ALL
+SELECT 'temp_hospitalizacion_local', sp_codigo_ipress, COUNT(*)
+FROM temp_hospitalizacion_local
+WHERE sp_codigo_ipress NOT IN (SELECT codigo_ipress FROM cfg_ipress_alcance)
+GROUP BY sp_codigo_ipress
+UNION ALL
+SELECT 'temp_bdt_consulta_local', codigo_ipress, COUNT(*)
+FROM temp_bdt_consulta_local
+WHERE codigo_ipress NOT IN (SELECT codigo_ipress FROM cfg_ipress_alcance)
+GROUP BY codigo_ipress
+UNION ALL
+SELECT 'temp_bdt_emergencia_sigesapol', codigo_ipress, COUNT(*)
+FROM temp_bdt_emergencia_sigesapol
+WHERE codigo_ipress NOT IN (SELECT codigo_ipress FROM cfg_ipress_alcance)
+GROUP BY codigo_ipress
+UNION ALL
+SELECT 'temp_bdt_hospitalizacion_local', codigo_ipress, COUNT(*)
+FROM temp_bdt_hospitalizacion_local
+WHERE codigo_ipress NOT IN (SELECT codigo_ipress FROM cfg_ipress_alcance)
+GROUP BY codigo_ipress
+UNION ALL
+SELECT 'temp_laboratorio_consulta_local', codigo_ipress, COUNT(*)
+FROM temp_laboratorio_consulta_local
+WHERE codigo_ipress NOT IN (SELECT codigo_ipress FROM cfg_ipress_alcance)
+GROUP BY codigo_ipress
+UNION ALL
+SELECT 'temp_laboratorio_emergencia_sigesapol', codigo_ipress, COUNT(*)
+FROM temp_laboratorio_emergencia_sigesapol
+WHERE codigo_ipress NOT IN (SELECT codigo_ipress FROM cfg_ipress_alcance)
+GROUP BY codigo_ipress
+UNION ALL
+SELECT 'temp_laboratorio_hospitalizacion_local', codigo_ipress, COUNT(*)
+FROM temp_laboratorio_hospitalizacion_local
+WHERE codigo_ipress NOT IN (SELECT codigo_ipress FROM cfg_ipress_alcance)
+GROUP BY codigo_ipress;
 

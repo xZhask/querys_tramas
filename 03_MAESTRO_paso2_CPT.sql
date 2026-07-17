@@ -31,8 +31,8 @@
 -- ========================= CONFIGURAR PERÍODO AQUÍ =========================
 DROP TABLE IF EXISTS cfg_periodo;
 CREATE TABLE cfg_periodo AS
-SELECT DATE '2025-07-01' AS p_ini,   -- <== inicio del periodo
-       DATE '2025-07-31' AS p_fin;   -- <== fin del período   (igual al paso 1)
+SELECT DATE '2025-12-01' AS p_ini,   -- <== inicio del periodo
+       DATE '2025-12-31' AS p_fin;   -- <== fin del período   (igual al paso 1)
 -- ============================================================================
 
 
@@ -58,6 +58,19 @@ CREATE TABLE temp_hospitalizacion_local AS
 	SELECT * FROM sp_hospitalizacion_en_periodo(
 		(SELECT p_ini FROM cfg_periodo), (SELECT p_fin FROM cfg_periodo));
 
+-- ALCANCE: filtra el resultado ya materializado (la función original no se
+-- toca). Constancia de lo depurado en log_alcance_depurado antes de borrar.
+DELETE FROM log_alcance_depurado
+ WHERE periodo_ini = (SELECT p_ini FROM cfg_periodo) AND periodo_fin = (SELECT p_fin FROM cfg_periodo)
+   AND tabla = 'temp_hospitalizacion_local';
+INSERT INTO log_alcance_depurado (periodo_ini, periodo_fin, tabla, codigo_ipress, nombre_ipress, filas_removidas, monto_removido)
+SELECT (SELECT p_ini FROM cfg_periodo), (SELECT p_fin FROM cfg_periodo), 'temp_hospitalizacion_local',
+       sp_codigo_ipress, sp_nombre_ipress, COUNT(*), SUM(sp_valorizacion_total)
+FROM temp_hospitalizacion_local
+WHERE sp_codigo_ipress <> (SELECT codigo_ipress FROM cfg_ipress_alcance)
+GROUP BY sp_codigo_ipress, sp_nombre_ipress;
+DELETE FROM temp_hospitalizacion_local WHERE sp_codigo_ipress <> (SELECT codigo_ipress FROM cfg_ipress_alcance);
+
 -- (temp_emergencia_local NO se crea: emergencia CPT sin datos 2024+, CHECK 13a)
 
 
@@ -81,17 +94,55 @@ CREATE TABLE temp_bdt_consulta_local AS
 	SELECT * FROM sp_procedimientos_segun_tipo_atencion(
 		(SELECT p_ini FROM cfg_periodo), (SELECT p_fin FROM cfg_periodo), 1);
 
+-- ALCANCE: ver nota en temp_hospitalizacion_local más arriba. En la práctica
+-- esta función siempre devuelve LNS (prestacion_cpt no tiene otras IPRESS),
+-- pero se filtra igual por consistencia y como red de seguridad para A4.
+DELETE FROM log_alcance_depurado
+ WHERE periodo_ini = (SELECT p_ini FROM cfg_periodo) AND periodo_fin = (SELECT p_fin FROM cfg_periodo)
+   AND tabla = 'temp_bdt_consulta_local';
+INSERT INTO log_alcance_depurado (periodo_ini, periodo_fin, tabla, codigo_ipress, nombre_ipress, filas_removidas, monto_removido)
+SELECT (SELECT p_ini FROM cfg_periodo), (SELECT p_fin FROM cfg_periodo), 'temp_bdt_consulta_local',
+       codigo_ipress, nombre_ipress, COUNT(*), SUM(valorizacion)
+FROM temp_bdt_consulta_local
+WHERE codigo_ipress <> (SELECT codigo_ipress FROM cfg_ipress_alcance)
+GROUP BY codigo_ipress, nombre_ipress;
+DELETE FROM temp_bdt_consulta_local WHERE codigo_ipress <> (SELECT codigo_ipress FROM cfg_ipress_alcance);
+
 -- 2.2 Emergencia con padrón SIGESAPOL (histórico hasta fin de período)
 DROP TABLE IF EXISTS temp_bdt_emergencia_sigesapol;
 CREATE TABLE temp_bdt_emergencia_sigesapol AS
 	SELECT * FROM sp_procedimientos_segun_tipo_atencion(
 		(SELECT p_ini FROM cfg_periodo), (SELECT p_fin FROM cfg_periodo), 22);
 
+-- ALCANCE: ver nota arriba.
+DELETE FROM log_alcance_depurado
+ WHERE periodo_ini = (SELECT p_ini FROM cfg_periodo) AND periodo_fin = (SELECT p_fin FROM cfg_periodo)
+   AND tabla = 'temp_bdt_emergencia_sigesapol';
+INSERT INTO log_alcance_depurado (periodo_ini, periodo_fin, tabla, codigo_ipress, nombre_ipress, filas_removidas, monto_removido)
+SELECT (SELECT p_ini FROM cfg_periodo), (SELECT p_fin FROM cfg_periodo), 'temp_bdt_emergencia_sigesapol',
+       codigo_ipress, nombre_ipress, COUNT(*), SUM(valorizacion)
+FROM temp_bdt_emergencia_sigesapol
+WHERE codigo_ipress <> (SELECT codigo_ipress FROM cfg_ipress_alcance)
+GROUP BY codigo_ipress, nombre_ipress;
+DELETE FROM temp_bdt_emergencia_sigesapol WHERE codigo_ipress <> (SELECT codigo_ipress FROM cfg_ipress_alcance);
+
 -- 2.3 Hospitalización (histórico hasta fin de período, con padrón local)
 DROP TABLE IF EXISTS temp_bdt_hospitalizacion_local;
 CREATE TABLE temp_bdt_hospitalizacion_local AS
 	SELECT * FROM sp_procedimientos_segun_tipo_atencion(
 		(SELECT p_ini FROM cfg_periodo), (SELECT p_fin FROM cfg_periodo), 3);
+
+-- ALCANCE: ver nota arriba.
+DELETE FROM log_alcance_depurado
+ WHERE periodo_ini = (SELECT p_ini FROM cfg_periodo) AND periodo_fin = (SELECT p_fin FROM cfg_periodo)
+   AND tabla = 'temp_bdt_hospitalizacion_local';
+INSERT INTO log_alcance_depurado (periodo_ini, periodo_fin, tabla, codigo_ipress, nombre_ipress, filas_removidas, monto_removido)
+SELECT (SELECT p_ini FROM cfg_periodo), (SELECT p_fin FROM cfg_periodo), 'temp_bdt_hospitalizacion_local',
+       codigo_ipress, nombre_ipress, COUNT(*), SUM(valorizacion)
+FROM temp_bdt_hospitalizacion_local
+WHERE codigo_ipress <> (SELECT codigo_ipress FROM cfg_ipress_alcance)
+GROUP BY codigo_ipress, nombre_ipress;
+DELETE FROM temp_bdt_hospitalizacion_local WHERE codigo_ipress <> (SELECT codigo_ipress FROM cfg_ipress_alcance);
 
 -- 2.4 (OPCIONAL - solo para reporte DIRSAPOL) Todos los tipos del mes
 DROP TABLE IF EXISTS temp_bdt_mes_local;
@@ -110,17 +161,56 @@ CREATE TABLE temp_laboratorio_consulta_local AS
 	SELECT * FROM sp_laboratorio_segun_tipo_atencion(
 		(SELECT p_ini FROM cfg_periodo), (SELECT p_fin FROM cfg_periodo), 1);
 
+-- ALCANCE: sp_laboratorio_segun_tipo_atencion SÍ deriva codigo_ipress con un
+-- join real a establecimiento_medico (prestacion_laboratorio cubre toda la
+-- red PNP, a diferencia de prestacion_cpt) — este filtro tiene efecto real,
+-- no es solo red de seguridad. Constancia en log_alcance_depurado.
+DELETE FROM log_alcance_depurado
+ WHERE periodo_ini = (SELECT p_ini FROM cfg_periodo) AND periodo_fin = (SELECT p_fin FROM cfg_periodo)
+   AND tabla = 'temp_laboratorio_consulta_local';
+INSERT INTO log_alcance_depurado (periodo_ini, periodo_fin, tabla, codigo_ipress, nombre_ipress, filas_removidas, monto_removido)
+SELECT (SELECT p_ini FROM cfg_periodo), (SELECT p_fin FROM cfg_periodo), 'temp_laboratorio_consulta_local',
+       codigo_ipress, nombre_ipress, COUNT(*), SUM(valorizacion_total)
+FROM temp_laboratorio_consulta_local
+WHERE codigo_ipress <> (SELECT codigo_ipress FROM cfg_ipress_alcance)
+GROUP BY codigo_ipress, nombre_ipress;
+DELETE FROM temp_laboratorio_consulta_local WHERE codigo_ipress <> (SELECT codigo_ipress FROM cfg_ipress_alcance);
+
 -- 3.2 Emergencia con padrón SIGESAPOL - modo 22 nuevo, SIN editar la función
 DROP TABLE IF EXISTS temp_laboratorio_emergencia_sigesapol;
 CREATE TABLE temp_laboratorio_emergencia_sigesapol AS
 	SELECT * FROM sp_laboratorio_segun_tipo_atencion(
 		(SELECT p_ini FROM cfg_periodo), (SELECT p_fin FROM cfg_periodo), 22);
 
+-- ALCANCE: ver nota arriba (efecto real, no red de seguridad).
+DELETE FROM log_alcance_depurado
+ WHERE periodo_ini = (SELECT p_ini FROM cfg_periodo) AND periodo_fin = (SELECT p_fin FROM cfg_periodo)
+   AND tabla = 'temp_laboratorio_emergencia_sigesapol';
+INSERT INTO log_alcance_depurado (periodo_ini, periodo_fin, tabla, codigo_ipress, nombre_ipress, filas_removidas, monto_removido)
+SELECT (SELECT p_ini FROM cfg_periodo), (SELECT p_fin FROM cfg_periodo), 'temp_laboratorio_emergencia_sigesapol',
+       codigo_ipress, nombre_ipress, COUNT(*), SUM(valorizacion_total)
+FROM temp_laboratorio_emergencia_sigesapol
+WHERE codigo_ipress <> (SELECT codigo_ipress FROM cfg_ipress_alcance)
+GROUP BY codigo_ipress, nombre_ipress;
+DELETE FROM temp_laboratorio_emergencia_sigesapol WHERE codigo_ipress <> (SELECT codigo_ipress FROM cfg_ipress_alcance);
+
 -- 3.3 Hospitalización
 DROP TABLE IF EXISTS temp_laboratorio_hospitalizacion_local;
 CREATE TABLE temp_laboratorio_hospitalizacion_local AS
 	SELECT * FROM sp_laboratorio_segun_tipo_atencion(
 		(SELECT p_ini FROM cfg_periodo), (SELECT p_fin FROM cfg_periodo), 3);
+
+-- ALCANCE: ver nota arriba (efecto real, no red de seguridad).
+DELETE FROM log_alcance_depurado
+ WHERE periodo_ini = (SELECT p_ini FROM cfg_periodo) AND periodo_fin = (SELECT p_fin FROM cfg_periodo)
+   AND tabla = 'temp_laboratorio_hospitalizacion_local';
+INSERT INTO log_alcance_depurado (periodo_ini, periodo_fin, tabla, codigo_ipress, nombre_ipress, filas_removidas, monto_removido)
+SELECT (SELECT p_ini FROM cfg_periodo), (SELECT p_fin FROM cfg_periodo), 'temp_laboratorio_hospitalizacion_local',
+       codigo_ipress, nombre_ipress, COUNT(*), SUM(valorizacion_total)
+FROM temp_laboratorio_hospitalizacion_local
+WHERE codigo_ipress <> (SELECT codigo_ipress FROM cfg_ipress_alcance)
+GROUP BY codigo_ipress, nombre_ipress;
+DELETE FROM temp_laboratorio_hospitalizacion_local WHERE codigo_ipress <> (SELECT codigo_ipress FROM cfg_ipress_alcance);
 
 -- 3.4 (OPCIONAL - solo para reporte DIRSAPOL) Todos los tipos del mes
 DROP TABLE IF EXISTS temp_laboratorio_mes_local;

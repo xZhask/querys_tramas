@@ -113,7 +113,8 @@ SELECT
 
 FROM prestaciones pre
 	LEFT JOIN asegurados a ON a.id = pre.id_asegurado
-	INNER JOIN asegurado_historias h ON h.id_asegurado = a.id AND h.id_establecimiento = '76' -- Hospital LNS
+	INNER JOIN asegurado_historias h ON h.id_asegurado = a.id
+		AND h.id_establecimiento = (SELECT id_establecimiento_sigesapol FROM cfg_ipress_alcance) -- para el numero de historia, no es el filtro de alcance (ver WHERE pre.id_establecimiento)
 	INNER JOIN establecimientos e ON e.id = pre.id_establecimiento
 	LEFT JOIN citas c ON c.id = pre.id_cita                                -- LEFT: emerg/hosp no siempre tienen cita
 	LEFT JOIN sub_consultorios subc ON subc.id = c.id_sub_consultorio
@@ -141,6 +142,10 @@ WHERE pre.id_tipo_atencion IN (1, 5, 7, 2, 3, 6, 8)
   -- Rango puro, sin cast, para aprovechar el índice de fecha_atencion:
   AND pre.fecha_atencion >= (SELECT p_ini FROM cfg_periodo)
   AND pre.fecha_atencion <  (SELECT p_fin FROM cfg_periodo) + INTERVAL '1 day'
+  -- ALCANCE: por sede de la PRESTACIÓN (pre.id_establecimiento), NO solo por
+  -- la historia del paciente (el join de arriba es para el nro. de historia,
+  -- no filtra alcance) — ver CONTEXTO_CANONICO.md §1 y §3.
+  AND pre.id_establecimiento = (SELECT id_establecimiento_sigesapol FROM cfg_ipress_alcance)
 
 GROUP BY
 	pre.id_tipo_atencion, p2.tipo_procedimiento,
@@ -152,6 +157,34 @@ GROUP BY
 	pre.codigo_upss, cons.nombre, upss.descripcion_upss, pre.ipress, pre.upss,
 	p2.codigo, p2.descripcion, pp.cantidad, p2.t_nivel3,
 	pre.id;
+
+
+-- ============================================================================
+-- ALCANCE: constancia de lo depurado por IPRESS (ver CONTEXTO_CANONICO.md §3).
+-- Captura específicamente el fix historia-vs-prestación: prestaciones cuya
+-- HISTORIA pertenece a LNS pero la PRESTACIÓN ocurrió en otro establecimiento
+-- (con el filtro viejo, solo por historia, estas filas SÍ entraban).
+-- ============================================================================
+DELETE FROM log_alcance_depurado
+ WHERE periodo_ini = (SELECT p_ini FROM cfg_periodo)
+   AND periodo_fin = (SELECT p_fin FROM cfg_periodo)
+   AND tabla = 'temp_sigesapol_procedimientos';
+
+INSERT INTO log_alcance_depurado (periodo_ini, periodo_fin, tabla, codigo_ipress, nombre_ipress, filas_removidas)
+SELECT (SELECT p_ini FROM cfg_periodo), (SELECT p_fin FROM cfg_periodo),
+       'temp_sigesapol_procedimientos', e.codigo, e.nombre, COUNT(*)
+FROM prestaciones pre
+INNER JOIN asegurado_historias h ON h.id_asegurado = pre.id_asegurado
+	AND h.id_establecimiento = (SELECT id_establecimiento_sigesapol FROM cfg_ipress_alcance)
+INNER JOIN establecimientos e ON e.id = pre.id_establecimiento
+LEFT JOIN prestacion_procedimientos pp ON pp.id_prestacion = pre.id
+LEFT JOIN procedimientos p2 ON p2.id = pp.id_procedimiento
+WHERE pre.id_tipo_atencion IN (1, 5, 7, 2, 3, 6, 8)
+  AND p2.tipo_procedimiento IN (1, 2, 3)
+  AND pre.fecha_atencion >= (SELECT p_ini FROM cfg_periodo)
+  AND pre.fecha_atencion <  (SELECT p_fin FROM cfg_periodo) + INTERVAL '1 day'
+  AND pre.id_establecimiento <> (SELECT id_establecimiento_sigesapol FROM cfg_ipress_alcance)
+GROUP BY e.codigo, e.nombre;
 
 
 -- ============================================================

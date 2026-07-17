@@ -65,7 +65,7 @@ function parsearAserciones(string $salida): array
 {
     $aserciones = [];
     foreach (explode("\n", $salida) as $linea) {
-        if (preg_match('/^(A1|A2|A3-ciclo|A3-CONTROL10)\s*\[[^\]]+\]:\s*(PASS|FALLO|SKIPPED)(.*)$/', trim($linea), $m)) {
+        if (preg_match('/^(A1|A2|A3-ciclo|A3-CONTROL10|A4)\s*\[[^\]]+\]:\s*(PASS|FALLO|SKIPPED)(.*)$/', trim($linea), $m)) {
             $aserciones[] = ['nombre' => $m[1], 'estado' => $m[2], 'detalle' => trim($m[3], " -")];
         }
     }

@@ -316,6 +316,47 @@ WHERE NOT EXISTS (
 
 
 -- ============================================================================
+-- cfg_ipress_alcance — alcance nivel III (Parte 3): este generador cubre
+-- EXCLUSIVAMENTE el Hospital Luis N. Sáenz. Las demás IPRESS (nivel I/II)
+-- las trabaja otro equipo con otra base. El filtro es SIEMPRE por
+-- código/ID de establecimiento, NUNCA por nombre (LNS tiene dos grafías
+-- legítimas en origen: "LUIS N SAENZ" y "LUIS N. SAENZ", ambas válidas).
+-- Duplicada en la BD SIGESAPOL (00_INSTALAR_post_restauracion_SIGESAPOL.sql)
+-- porque las dos BD no pueden leerse entre sí sin dblink/fdw — mismo patrón
+-- que cfg_periodo, que también vive por separado en cada BD.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS cfg_ipress_alcance (
+	codigo_ipress varchar(10) PRIMARY KEY,
+	id_establecimiento_sigesapol integer NOT NULL,
+	descripcion text NOT NULL,
+	registrado_en timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO cfg_ipress_alcance (codigo_ipress, id_establecimiento_sigesapol, descripcion)
+SELECT '00013591', 76,
+       'Hospital Nacional PNP Luis N. Saenz (nivel III) - unico alcance de este generador; las demas IPRESS (nivel I/II) las trabaja otro equipo con otra base.'
+WHERE NOT EXISTS (SELECT 1 FROM cfg_ipress_alcance WHERE codigo_ipress = '00013591');
+
+
+-- ============================================================================
+-- log_alcance_depurado — constancia de filas/montos removidos por IPRESS
+-- fuera de alcance en cada extracción (ver CONTEXTO_CANONICO.md §3).
+-- Idempotente por (periodo_ini, periodo_fin, tabla): cada script borra su
+-- propio período+tabla antes de reinsertar, igual que las temp_*.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS log_alcance_depurado (
+	periodo_ini date NOT NULL,
+	periodo_fin date NOT NULL,
+	tabla text NOT NULL,
+	codigo_ipress varchar(10),
+	nombre_ipress text,
+	filas_removidas bigint NOT NULL,
+	monto_removido numeric,
+	registrado_en timestamptz NOT NULL DEFAULT now()
+);
+
+
+-- ============================================================================
 -- VERIFICACIÓN FINAL
 -- ============================================================================
 DO $$
@@ -352,6 +393,14 @@ BEGIN
 		THEN '✓ (' || (SELECT COUNT(*)::text FROM cfg_fuente_canonica) || ' vigencias)'
 		ELSE '✗ (faltan vigencias, esperadas >= 2)' END;
 	RAISE NOTICE 'Vigencias cargadas en cfg_fuente_canonica: %', v_check;
+
+	v_check := CASE WHEN EXISTS (SELECT 1 FROM cfg_ipress_alcance WHERE codigo_ipress = '00013591')
+		THEN '✓' ELSE '✗ (tabla no se creo o falta la fila LNS)' END;
+	RAISE NOTICE 'cfg_ipress_alcance (LNS 00013591): %', v_check;
+
+	v_check := CASE WHEN EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'log_alcance_depurado')
+		THEN '✓' ELSE '✗ (tabla no se creo)' END;
+	RAISE NOTICE 'Tabla log_alcance_depurado: %', v_check;
 
 	RAISE NOTICE '=== FIN VERIFICACION ===';
 END $$;

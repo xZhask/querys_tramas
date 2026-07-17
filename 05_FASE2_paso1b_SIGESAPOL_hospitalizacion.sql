@@ -163,7 +163,30 @@ LEFT JOIN procedimientos pro ON pro.codigo =
 WHERE h.fecha_alta_medica IS NOT NULL
   AND h.estado IN (6, 7)  -- válidas según CHECK 17
   AND h.fecha_alta_medica::date BETWEEN (SELECT p_ini FROM cfg_periodo)
-                                    AND (SELECT p_fin FROM cfg_periodo);
+                                    AND (SELECT p_fin FROM cfg_periodo)
+  -- ALCANCE: solo Hospital Luis N. Sáenz (ver CONTEXTO_CANONICO.md §1).
+  -- Filtro por ID de establecimiento, nunca por nombre (dos grafías legítimas).
+  AND es.id = (SELECT id_establecimiento_sigesapol FROM cfg_ipress_alcance);
+
+
+-- ============================================================================
+-- ALCANCE: constancia de lo depurado por IPRESS (ver CONTEXTO_CANONICO.md §3)
+-- ============================================================================
+DELETE FROM log_alcance_depurado
+ WHERE periodo_ini = (SELECT p_ini FROM cfg_periodo)
+   AND periodo_fin = (SELECT p_fin FROM cfg_periodo)
+   AND tabla = 'temp_hospitalizacion_sigesapol_estancia';
+
+INSERT INTO log_alcance_depurado (periodo_ini, periodo_fin, tabla, codigo_ipress, nombre_ipress, filas_removidas)
+SELECT (SELECT p_ini FROM cfg_periodo), (SELECT p_fin FROM cfg_periodo),
+       'temp_hospitalizacion_sigesapol_estancia', es.codigo, es.nombre, COUNT(*)
+FROM hospitalizaciones h
+INNER JOIN establecimientos es ON es.id = h.id_establecimiento
+WHERE h.fecha_alta_medica IS NOT NULL
+  AND h.estado IN (6, 7)
+  AND h.fecha_alta_medica::date BETWEEN (SELECT p_ini FROM cfg_periodo) AND (SELECT p_fin FROM cfg_periodo)
+  AND es.id <> (SELECT id_establecimiento_sigesapol FROM cfg_ipress_alcance)
+GROUP BY es.codigo, es.nombre;
 
 
 -- ============================================================

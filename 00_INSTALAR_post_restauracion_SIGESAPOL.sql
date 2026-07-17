@@ -50,6 +50,42 @@ language 'plpgsql';
 
 
 -- ============================================================================
+-- cfg_ipress_alcance — alcance nivel III (Parte 3): este generador cubre
+-- EXCLUSIVAMENTE el Hospital Luis N. Sáenz. Duplicada de la BD CPT (mismo
+-- valor) porque las dos BD no pueden leerse entre sí sin dblink/fdw — mismo
+-- patrón que cfg_periodo, ver justificación completa en
+-- 00_INSTALAR_post_restauracion_CPT.sql.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS cfg_ipress_alcance (
+	codigo_ipress varchar(10) PRIMARY KEY,
+	id_establecimiento_sigesapol integer NOT NULL,
+	descripcion text NOT NULL,
+	registrado_en timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO cfg_ipress_alcance (codigo_ipress, id_establecimiento_sigesapol, descripcion)
+SELECT '00013591', 76,
+       'Hospital Nacional PNP Luis N. Saenz (nivel III) - unico alcance de este generador; las demas IPRESS (nivel I/II) las trabaja otro equipo con otra base.'
+WHERE NOT EXISTS (SELECT 1 FROM cfg_ipress_alcance WHERE codigo_ipress = '00013591');
+
+
+-- ============================================================================
+-- log_alcance_depurado — constancia de filas removidas por IPRESS fuera de
+-- alcance (ver 00_INSTALAR_post_restauracion_CPT.sql para la versión CPT,
+-- que además guarda monto_removido).
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS log_alcance_depurado (
+	periodo_ini date NOT NULL,
+	periodo_fin date NOT NULL,
+	tabla text NOT NULL,
+	codigo_ipress varchar(10),
+	nombre_ipress text,
+	filas_removidas bigint NOT NULL,
+	registrado_en timestamptz NOT NULL DEFAULT now()
+);
+
+
+-- ============================================================================
 -- VERIFICACIÓN FINAL
 -- ============================================================================
 DO $$
@@ -61,6 +97,14 @@ BEGIN
 	v_check := CASE WHEN to_regprocedure('sp_sigesapol_diagnostico_en_prestacion_emergencia(integer)') IS NOT NULL
 		THEN '✓' ELSE '✗ (Parche A no aplico)' END;
 	RAISE NOTICE 'sp_sigesapol_diagnostico_en_prestacion_emergencia (Parche A): %', v_check;
+
+	v_check := CASE WHEN EXISTS (SELECT 1 FROM cfg_ipress_alcance WHERE codigo_ipress = '00013591')
+		THEN '✓' ELSE '✗ (tabla no se creo o falta la fila LNS)' END;
+	RAISE NOTICE 'cfg_ipress_alcance (LNS 00013591): %', v_check;
+
+	v_check := CASE WHEN EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'log_alcance_depurado')
+		THEN '✓' ELSE '✗ (tabla no se creo)' END;
+	RAISE NOTICE 'Tabla log_alcance_depurado: %', v_check;
 
 	RAISE NOTICE '=== FIN VERIFICACION ===';
 END $$;

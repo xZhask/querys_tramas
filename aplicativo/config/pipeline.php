@@ -149,7 +149,7 @@ return [
     ],
     [
         'numero' => 11,
-        'nombre' => 'Verificación de aserciones A1/A2/A3',
+        'nombre' => 'Verificación de aserciones A1/A2/A3/A4',
         'archivo' => '14_VERIFICAR_ASERTOS.py',
         'bd' => 'cpt',
         'tipo' => 'python',

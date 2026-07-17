@@ -101,6 +101,12 @@ def format_trama_val(val):
         # Wait, the birth date in the old trama was DD/MM/YYYY. Let's write a simple logic:
         # If it's a date and represents sp_fecha_nacimiento, we format it as %d/%m/%Y.
         return val.strftime('%Y-%m-%d')
+    if isinstance(val, str):
+        # Saneo de exportación: algunos campos de texto libre (diagnósticos,
+        # nombres) traen \r/\n embebidos desde origen. Sin esto, esos
+        # caracteres quedan LITERALES dentro del valor y parten una fila
+        # lógica en dos líneas físicas del .txt (62 registros de CE agosto).
+        return val.replace('\r', ' ').replace('\n', ' ')
     return str(val)
 
 def write_trama_file(filepath, rows, col_keys):
@@ -514,6 +520,14 @@ def main():
     retenida_por_tipo = {'consulta': 0, 'emergencia': 0, 'hospitalizacion': 0}
     for _, stype in retained_duplicates_sources:
         retenida_por_tipo[stype] = retenida_por_tipo.get(stype, 0) + 1
+    # Caso A (regla 8 del ancla): los pares E->H propuestos por el pipeline
+    # son RETENIDA, no facturacion aplicada, aunque por defecto ("SE UNE") el
+    # pipeline ya los escriba en trama_hospitalizacion con fecha extendida a
+    # la espera de que Auditoria Medica confirme PROCEDE/NO PROCEDE. Sin esto
+    # se contaban como LIMPIA. Cuentan: las propias estancias unidas
+    # (eh_groups) mas el paquete de procedimientos/laboratorio movido.
+    retenida_por_tipo['hospitalizacion'] += len(eh_groups)
+    retenida_por_tipo['hospitalizacion'] += len(excluded_package_emergencia) + len(excluded_package_hospitalizacion)
     informativa_por_tipo = {'consulta': 0, 'emergencia': 0, 'hospitalizacion': 0}
     for _, stype in duplicates_origin_list:
         informativa_por_tipo[stype] = informativa_por_tipo.get(stype, 0) + 1
@@ -537,7 +551,7 @@ def main():
     for tipo in ('consulta', 'emergencia', 'hospitalizacion', 'farmacia'):
         retenida = retenida_por_tipo.get(tipo, 0)
         informativa = informativa_por_tipo.get(tipo, 0)
-        limpia = final_counts[tipo] - informativa
+        limpia = final_counts[tipo] - retenida - informativa
         total = total_extraido[tipo]
         residuo = total - (limpia + retenida + informativa)
         conservacion[tipo] = {
