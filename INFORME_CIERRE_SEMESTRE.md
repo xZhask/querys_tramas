@@ -360,3 +360,18 @@ Durante la corrida del lote semestral, se identificaron y resolvieron las siguie
    Se recomienda implementar una alerta automática en el sistema SIGESAPOL cuando un paciente cumpla **20 horas continuas de permanencia en Emergencia**. Esto servirá de aviso temprano al personal médico y administrativo para gestionar el traslado físico y formal del paciente a Hospitalización o su alta oportuna, evitando las reclasificaciones tardías. Los **1,436 casos del semestre** (alcance LNS; 2,298 en la versión multi-IPRESS anterior) que terminaron convirtiéndose en hospitalizaciones de facto (Caso B) sustentan la necesidad crítica de esta alerta como instrumento de control y reducción de glosas.
 5. **Conteo de "Duplicados de Origen" en `generate_outputs_v2.py` — resuelto**:
    La incidencia técnica #6 (llave de deduplicación sin discriminador por tipo) había dejado el conteo informativo de "duplicados de origen" en un rango implausible (17,000-53,000 por mes). El fix del 2026-07-16 (incorporar el ID único del registro a la llave de agrupación, ver `CONTEXTO_CANONICO.md` §3) lo resolvió: bajo el alcance LNS de este cierre, el campo `duplicados_origen` de `metricas.json` da 994-1,774 por mes (sección 5, fila "Duplicados en Origen") — un rango plausible, mayor al de la versión multi-IPRESS anterior (149-582) porque usa una fuente de conteo distinta (y más completa) desde el fix, no solo un efecto del alcance. No afecta la facturación de las tramas ni las secciones 4 ni 6 de este informe.
+6. **Pendiente de decisión — regla 1.4 ("se solapa o toca") incompleta en `eh_groups`**:
+   Al recalcular el benchmark de julio contra la hoja manual de la gestión
+   anterior (`expedientes/benchmark_v3_julio.md`), se encontró que el JOIN
+   real que arma los pares Caso A en `generate_outputs_v2.py` solo exige
+   solapamiento estricto de fechas — no implementa el margen de "toca" que
+   pide la regla inmutable 1.4 (`CONTEXTO_CANONICO.md` §1.4): una
+   hospitalización que empieza el día calendario siguiente al alta de
+   emergencia (transferencia física inmediata) no se une hoy como Caso A.
+   Impacto medido en julio: **30 de 512 pares manuales (5.9%)** que la hoja
+   de la gestión anterior sí unifica y el pipeline no. `CONTROL 5` ya
+   clasifica esta categoría por separado ("CONTIGUO") pero solo de forma
+   informativa. **No se corrigió en este cierre** — hacerlo cambiaría los
+   conteos de Caso A/RETENIDA de los 6 meses ya cerrados (secciones 4 y 6)
+   y requiere una decisión explícita y una nueva corrida completa antes de
+   aplicarse.

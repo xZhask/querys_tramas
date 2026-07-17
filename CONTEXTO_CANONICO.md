@@ -105,7 +105,7 @@
 | Julio 2025, recuperación neta por regla 24h (metodología corregida) | **S/. 513,587.46** | Verificado por `CONTROL 14`, `expedientes/2025-07/03_INFORMATIVOS/controles_integridad_raw.txt` |
 | Partición Sección 4 (Tipo2+CasoA+CasoB+CierreAdmin=Total, residuo 0) | Semestre: 29,000+2,274+1,436+793=33,503 | Verificado por `CONTROL 13`, residuo 0 en los 6 meses |
 | Cuadratura C1 (= aserción A1 de conservación: LIMPIA + RETENIDA + INFORMATIVA = total extraído) | Cierra en **residuo 0** por mes y por tipo de trama, los 6 meses | Verificado — las 4 aserciones (A1/A2/A3/A4) están en OK para los 6 meses |
-| Benchmark de eficiencia vs. proceso manual | **No recalculado bajo alcance LNS** | La hoja manual de julio (fuente del 91.5%/8,388 vs 5,441) no es un artefacto de este repositorio — no se puede recomputar la coincidencia sin ella. Dato indirecto: el conteo de pares Caso A (E→H) bajó de 2,797 a 2,274 (**-18.7%**, semestre), en línea con la magnitud de la depuración por alcance — ver punto 7 de la nota |
+| Benchmark de eficiencia vs. proceso manual, julio 2025 (recalculado 2026-07-17) | **94.9%** (352/371, universo ajustado) | La hoja manual (`07 JULIO 2025 ESTANCIA TRABAJADA.xlsx`, aportada por el usuario, ya era 100% LNS) se cruzó contra `eh_groups` de `generate_outputs_v2.py` por (documento, rango extendido). De 453 discrepancias iniciales, 434 tienen causa estructural identificada (offset ≤2 días, cobertura SIGESAPOL-nativa nueva del pipeline, duplicado interno del pipeline, cruce de mes, y el hallazgo nuevo "CONTIGUO" — ver regla 1.4 y nota abajo); quedan 19 pares sin explicar (100% del lado "el pipeline encontró un par que la hoja manual no tiene"). Metodología y script completos en `expedientes/benchmark_v3_julio.md` / `benchmark_v3_julio_analisis.py` (no versionados, contienen documento de paciente). No es comparable 1:1 al 91.5%/8,388 vs 5,441 histórico — no hay query de origen preservada para esa cifra. |
 | Atenciones Tipo 2 (Emergencia) facturadas (CONTROL 15) | **29,000** atenciones / **S/. 1,009,347.62** | Verificado por CONTROL 15 en los 6 meses (Jul-Dic 2025) |
 | Alcance depurado (filas removidas en extracción por IPRESS fuera de LNS, semestre) | SIGESAPOL: 608,580 filas · CPT (laboratorio, join real a establecimiento_medico): 542 filas / S/. 9,757.61 | `log_alcance_depurado` en ambas BD — ver §3, entrada 2026-07-17, y `INFORME_CIERRE_SEMESTRE.md` para el detalle por mes/tabla |
 
@@ -302,6 +302,27 @@
   7. Pipeline completo jul-dic re-corrido con el alcance aplicado; A1-A4 en
      PASS los 6 meses. Ver §2 para los números finales y su magnitud de
      cambio frente a la versión multi-IPRESS.
+- **2026-07-17 — Benchmark de julio recalculado (94.9%) + hallazgo: regla
+  1.4 ("se solapa o toca") incompleta en `eh_groups`**: el usuario aportó
+  `07 JULIO 2025 ESTANCIA TRABAJADA.xlsx` (hoja de trabajo de la gestión
+  anterior). Se cruzó contra los pares Caso A del pipeline v3.0
+  (metodología completa en `expedientes/benchmark_v3_julio.md`). De 453
+  discrepancias, 434 quedaron explicadas por causa estructural. La más
+  relevante: **30 pares que la hoja manual unifica y el pipeline no**,
+  porque el JOIN real de `eh_groups` en `generate_outputs_v2.py`
+  (líneas ~199-203) solo exige solapamiento estricto de fechas
+  (`e.sp_fecha_atencion::date <= h.sp_fecha_alta::date AND
+  e.sp_fecha_alta_emergencia::date >= h.sp_fecha_atencion::date`), sin el
+  margen de 1 día que la regla inmutable 1.4 exige con "toca" — una
+  hospitalización que empieza el día siguiente al alta de emergencia
+  (transferencia física inmediata) no se une hoy. `CONTROL 5` sí clasifica
+  esta categoría por separado ("CONTIGUO", con margen +1) pero es solo
+  informativa, nunca decide si el par entra a `eh_groups`. **No corregido
+  en esta revisión** — cambiaría los conteos de Caso A/RETENIDA de los 6
+  meses ya cerrados (§2 arriba); pendiente de decisión explícita antes de
+  tocarlo. Quedan además 19 pares (de 591) genuinamente sin explicar,
+  documentados en `expedientes/benchmark_v3_julio.md` §4, para revisión de
+  Auditoría Médica.
 
 ---
 
