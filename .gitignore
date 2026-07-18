@@ -6,3 +6,9 @@ __pycache__/
 *.pyc
 aplicativo/vendor/
 _referencia_piloto_v2_*/
+
+# PHI: cualquier .xlsx puede traer documento/nombre de paciente (hojas de
+# trabajo de referencia, libros de auditoría). expedientes/ ya cubre los
+# libros generados por el pipeline; esta regla cubre además cualquier hoja
+# de referencia que se suelte fuera de esa carpeta (p. ej. en la raíz).
+*.xlsx
