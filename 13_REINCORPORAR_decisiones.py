@@ -200,16 +200,33 @@ def main():
         log_lines.append(f"Grupo {group_id} - Paciente {g['dni']} ({g['nombres_paciente']}): DECISION = {dec}")
         
         if dec == 'NO SE UNE':
-            # Revert hospitalization stay to original dates
+            # Revert hospitalization stay to original dates/dias/valorizacion.
+            # Usa h_ing_orig/h_alt_orig/h_dias_orig/h_valorizacion_orig del
+            # propio grupo (snapshot tomado ANTES del UPDATE de Caso A en
+            # 12_RECLASIFICAR_emergencias_24h.sql, sección 1b) en vez de
+            # retained_cpt_stays_map: esa tabla se carga de hospitalizacion_raw,
+            # que se consulta DESPUES de que el UPDATE ya extendió la estancia,
+            # así que sus fechas/dias/valorización YA estaban extendidas y el
+            # "revert" no revertía nada (verificado con un caso real de julio
+            # 2025: reportaba la fecha extendida como si fuera la original).
             h_id = str(g['h_id'])
-            if h_id and h_id in retained_cpt_stays_map:
+            if h_id and g.get('h_ing_orig') is not None and g.get('h_alt_orig') is not None:
+                orig_ing = parse_date(g.get('h_ing_orig'))
+                orig_alt = parse_date(g.get('h_alt_orig'))
+                orig_days = str(g.get('h_dias_orig') or 1)
+                orig_val = f"{float(g.get('h_valorizacion_orig') or 0.0):.2f}"
+                hosp_stays_to_update[h_id] = (orig_ing, orig_alt, orig_days, orig_val)
+                log_lines.append(f"  -> Revertida Estancia Hospitalizacion {h_id} a fechas originales: {orig_ing} - {orig_alt}")
+            elif h_id and h_id in retained_cpt_stays_map:
+                # Fallback para expedientes generados antes de este fix (sin
+                # h_dias_orig/h_valorizacion_orig en .eh_groups.json).
                 r_orig = retained_cpt_stays_map[h_id]
                 orig_ing = parse_date(r_orig.get('sp_fecha_atencion'))
                 orig_alt = parse_date(r_orig.get('sp_fecha_alta'))
                 orig_days = str(r_orig.get('sp_suma_cantidad') or 1)
                 orig_val = f"{float(r_orig.get('sp_valorizacion_total') or 0.0):.2f}"
                 hosp_stays_to_update[h_id] = (orig_ing, orig_alt, orig_days, orig_val)
-                log_lines.append(f"  -> Revertida Estancia Hospitalizacion {h_id} a fechas originales: {orig_ing} - {orig_alt}")
+                log_lines.append(f"  -> Revertida Estancia Hospitalizacion {h_id} a fechas originales (fallback): {orig_ing} - {orig_alt}")
             
             # Remove emergency package from hospitalisation trama
             removed_count = 0

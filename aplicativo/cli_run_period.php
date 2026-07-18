@@ -9,7 +9,7 @@ declare(strict_types=1);
  *
  * Uso:
  *   php cli_run_period.php instaladores
- *   php cli_run_period.php YYYY-MM [--desde=N]
+ *   php cli_run_period.php YYYY-MM [--desde=N] [--hasta=N]
  */
 
 require_once __DIR__ . '/app/bootstrap.php';
@@ -55,9 +55,13 @@ $mes = (int) $mesStr;
 $periodo = $modo;
 
 $desde = 1;
+$hasta = null;
 foreach ($args as $a) {
     if (preg_match('/^--desde=(\d+)$/', $a, $m)) {
         $desde = (int) $m[1];
+    }
+    if (preg_match('/^--hasta=(\d+)$/', $a, $m)) {
+        $hasta = (int) $m[1];
     }
 }
 
@@ -82,7 +86,7 @@ echo "Ejecucion #{$id} iniciada para {$periodo} (desde paso {$desde})\n";
 $runner = new PipelineRunner($anio, $mes);
 $ok = true;
 foreach ($pasos as $paso) {
-    if ($paso['numero'] < $desde) {
+    if ($paso['numero'] < $desde || ($hasta !== null && $paso['numero'] > $hasta)) {
         continue;
     }
     $t0 = microtime(true);

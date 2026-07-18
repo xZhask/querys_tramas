@@ -11,6 +11,13 @@
 > *historia* del paciente en vez de por la *sede de la prestación*, en el
 > caso de procedimientos SIGESAPOL). Ver `CONTEXTO_CANONICO.md` §1.9 y §3
 > (entrada 2026-07-17) para el detalle completo del cambio.
+>
+> **Nota v3.1 (misma fecha de reemisión, corrida posterior)**: esta versión
+> además corrige la unión Caso A (Emergencia→Hospitalización) para
+> implementar el margen "o toca" de la regla inmutable 1.4, y corrige un bug
+> de auto-match en el libro de auditoría que sobreestimaba RETENIDA
+> hospitalización (v3.0 publicó 637 para julio; el valor real era 379). Ver
+> `CONTEXTO_CANONICO.md` §3, entrada v3.1, para el detalle completo.
 
 ## 1. Resumen Ejecutivo
 
@@ -18,13 +25,13 @@ Este informe consolida los resultados técnicos, operativos y económicos del pr
 
 La implementación del nuevo pipeline automatizado ha permitido integrar de manera hermética las bases de datos de **CPT (Sistema local de facturación)** y **SIGESAPOL (Sistema institucional en adopción y fuente canónica)**. Se resolvieron de forma definitiva las inconsistencias de CPMS de alta en emergencias y se aplicó la regla de permanencia mayor a 24 horas.
 
-### Hitos Clave del Semestre (alcance LNS):
-* **Monto Total Recuperado por Regla de 24 Horas**: Se capturó una facturación adicional y defendible de **S/. 4,873,686.93** mediante la reclasificación de estancias de emergencia de más de 24 horas a hospitalización especializada y la unificación de estancias solapadas (Caso A). La versión anterior de este informe (multi-IPRESS) reportaba S/. 6,879,013.18 — la sección 4 explica la reconciliación y la magnitud del cambio por alcance.
-* **Ahorro Financiero por Deduplicación**: Se previno un doble cobro potencial de **S/. 490,401.29** al eliminar automáticamente duplicidades de prestaciones idénticas registradas en CPT y SIGESAPOL (prácticamente sin cambio frente al multi-IPRESS: S/. 491,713.41 — la fuente CPT de estos duplicados ya era LNS-only por diseño).
-* **Conciliación de Atenciones Tipo 2 (Emergencia)**: Se conciliaron **29,000** atenciones de emergencia facturadas bajo la trama Tipo 2, acumulando un monto valorizado de **S/. 1,009,347.62** sustentado mediante CONTROL 15 (multi-IPRESS: 47,816 / S/. 1,585,426.27).
-* **Volumen Total Procesado**: Se depuraron y generaron entregables finales con **1,233,686 registros** en Consulta Externa, **138,306** en Emergencia, **343,029** en Hospitalización y **647,774** dispensaciones de Farmacia (Farmacia sin cambio: ya filtraba por establecimiento).
+### Hitos Clave del Semestre (alcance LNS, v3.1):
+* **Monto Total Recuperado por Regla de 24 Horas**: Se capturó una facturación adicional y defendible de **S/. 5,031,773.76** mediante la reclasificación de estancias de emergencia de más de 24 horas a hospitalización especializada y la unificación de estancias solapadas o contiguas (Caso A, regla 1.4 "se solapa o toca"). Sube +S/. 158,086.83 (+3.2%) frente a la versión LNS anterior de este informe (S/. 4,873,686.93) por el fix del margen "o toca" y de una fuga donde emergencias que perdían el desempate de unión desaparecían sin facturarse (ver sección 4 y `CONTEXTO_CANONICO.md` §3). La versión previa a la aplicación del alcance LNS (multi-IPRESS) reportaba S/. 6,879,013.18 — la sección 4 explica esa reconciliación.
+* **Ahorro Financiero por Deduplicación**: Se previno un doble cobro potencial de **S/. 490,401.29** al eliminar automáticamente duplicidades de prestaciones idénticas registradas en CPT y SIGESAPOL (sin cambio frente a la versión LNS anterior — la deduplicación es independiente del fix "o toca").
+* **Conciliación de Atenciones Tipo 2 (Emergencia)**: Se conciliaron **28,942** atenciones de emergencia facturadas bajo la trama Tipo 2, acumulando un monto valorizado de **S/. 1,006,184.76** sustentado mediante CONTROL 15 (baja levemente de 29,000/S/.1,009,347.62 — emergencias que antes quedaban Tipo 2 ahora se unen como Caso A).
+* **Volumen Total Procesado**: Se depuraron y generaron entregables finales con **1,233,686 registros** en Consulta Externa, **135,365** en Emergencia, **348,204** en Hospitalización y **647,774** dispensaciones de Farmacia (Farmacia y Consulta Externa sin cambio frente a v3.0; Emergencia/Hospitalización cambian por el fix "o toca" — emergencias que se unen dejan de contarse en su propia trama).
 * **Hermeticidad y Consistencia**: El 100% de los lotes cerró con **cero registros con doble cobro** entre la trama de emergencia y la trama de hospitalización (CONTROL 10 = 0) y las **4** aserciones de calidad (A1/A2/A3/A4 — A4 es la nueva aserción de pureza de alcance) en verde para los 6 meses.
-* **Alcance depurado en la extracción**: se removieron 608,580 filas en SIGESAPOL (emergencias, hospitalización y, sobre todo, procedimientos por el fix historia-vs-prestación) y 542 filas / S/. 9,757.61 en CPT (laboratorio, único punto donde las funciones CPT originales sí mezclan establecimientos) — detalle por mes/tabla en la sección 4bis.
+* **Alcance depurado en la extracción**: se removieron 608,580 filas en SIGESAPOL (emergencias, hospitalización y, sobre todo, procedimientos por el fix historia-vs-prestación) y 542 filas / S/. 9,757.61 en CPT (laboratorio, único punto donde las funciones CPT originales sí mezclan establecimientos) — detalle por mes/tabla en la sección 4bis (sin cambio en v3.1, el alcance es independiente del fix "o toca").
 
 ---
 
@@ -58,25 +65,37 @@ Los archivos txt de tramas finales exportados a la carpeta `tramas_exportadas/` 
 
 | Mes / Período | Consulta Externa | Emergencia | Hospitalización | Farmacia | Total Mes |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Julio 2025** | 222,089 | 25,642 | 73,407 | 105,694 | **426,832** |
-| **Agosto 2025** | 220,648 | 24,059 | 61,464 | 103,258 | **409,429** |
-| **Setiembre 2025** | 230,830 | 24,048 | 59,902 | 118,417 | **433,197** |
-| **Octubre 2025** | 210,672 | 21,060 | 55,895 | 118,984 | **406,611** |
-| **Noviembre 2025** | 181,432 | 22,646 | 48,972 | 102,455 | **355,505** |
-| **Diciembre 2025** | 168,015 | 20,851 | 43,389 | 98,966 | **331,221** |
-| **TOTAL TRAMA** | **1,233,686** | **138,306** | **343,029** | **647,774** | **2,362,795** |
+| **Julio 2025** | 222,089 | 24,983 | 74,601 | 105,694 | **427,367** |
+| **Agosto 2025** | 220,648 | 23,567 | 62,349 | 103,258 | **409,822** |
+| **Setiembre 2025** | 230,830 | 23,487 | 60,812 | 118,417 | **433,546** |
+| **Octubre 2025** | 210,672 | 20,700 | 56,559 | 118,984 | **406,915** |
+| **Noviembre 2025** | 181,432 | 22,249 | 49,572 | 102,455 | **355,708** |
+| **Diciembre 2025** | 168,015 | 20,379 | 44,311 | 98,966 | **331,671** |
+| **TOTAL TRAMA** | **1,233,686** | **135,365** | **348,204** | **647,774** | **2,365,029** |
 
 > [!NOTE]
 > **Nota de Consistencia en Hospitalización**:
-> La integración del Caso A (unión de estancias sin umbral) ha estabilizado el volumen total de líneas de Hospitalización en valores estables, al absorber de manera coherente las estancias solapadas de emergencia dentro del flujo de hospitalización.
+> La integración del Caso A (unión de estancias sin umbral, incluyendo el
+> margen "o toca" desde v3.1) ha estabilizado el volumen total de líneas de
+> Hospitalización en valores estables, al absorber de manera coherente las
+> estancias solapadas o contiguas de emergencia dentro del flujo de
+> hospitalización.
 >
 > **Nota de alcance (2026-07-17)**: estos volúmenes reemplazan a los de la
 > versión multi-IPRESS anterior (Total: 2,956,003), que incluía toda la red
 > PNP. La reducción por categoría es muy dispareja: Farmacia **0%** (ya
-> filtraba por establecimiento), Hospitalización **-2.97%** (343,029 vs
+> filtraba por establecimiento), Hospitalización **-1.51%** (348,204 vs
 > 353,525 — LNS ya concentraba la gran mayoría de las hospitalizaciones de
 > la red), Consulta Externa **-30.55%** (1,233,686 vs 1,776,481) y
-> Emergencia **-22.36%** (138,306 vs 178,223). Total semestral: **-20.1%**.
+> Emergencia **-24.04%** (135,365 vs 178,223). Total semestral: **-20.0%**.
+>
+> **Nota v3.1 (fix "o toca")**: frente a la versión LNS anterior de este
+> informe (Total: 2,362,795), Emergencia baja de 138,306 a 135,365 (-2,941:
+> más emergencias se unen a su hospitalización y dejan de contarse por
+> separado) y Hospitalización sube de 343,029 a 348,204 (+5,175: la suma de
+> las nuevas uniones "o toca" y de las emergencias que antes desaparecían
+> sin facturarse por la fuga de desempate, ver sección 4). Consulta Externa
+> y Farmacia no cambian — el fix solo afecta Emergencia/Hospitalización.
 
 ---
 
@@ -88,24 +107,34 @@ Por otro lado, las emergencias con duración real menor o igual a 24 horas (y qu
 
 **Reconciliación de este cierre**: la tabla del cierre anterior sumaba más que el total de emergencias porque la columna "Excluidas por Solapamiento" duplicaba población ya contada dentro de "Caso A Unidas" (ambas contaban, con criterios ligeramente distintos, emergencias que se solapan con una hospitalización). Se eliminó esa columna y se verificó la partición con una query independiente (`CONTROL 13` en `04_CONTROL_integridad.sql`) que deriva cada categoría por separado — ninguna como resto de las demás — y confirma **residuo 0** en los 6 meses:
 
-| Período | Emergencias Totales | Tipo 2 Facturadas | Caso B Reclass (Nueva Hosp) | Caso A Unidas (Overlap Hosp) | Cierre Admin (Excluidas) | Residuo | Facturación Recuperada Neto (S/.) |
+| Período | Emergencias Totales | Tipo 2 Facturadas | Caso B Reclass (Nueva Hosp) | Caso A Unidas (Overlap/Toca Hosp) | Cierre Admin (Excluidas) | Residuo | Facturación Recuperada Neto (S/.) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Julio 2025** | 5,683 | 5,006 | 219 | 379 | 79 | 0 | S/. 513,587.46 |
-| **Agosto 2025** | 5,456 | 4,882 | 204 | 356 | 14 | 0 | S/. 591,592.00 |
-| **Setiembre 2025** | 5,699 | 5,150 | 178 | 358 | 13 | 0 | S/. 485,178.63 |
-| **Octubre 2025** | 5,735 | 4,672 | 335 | 392 | 336 | 0 | S/. 1,357,609.24 |
-| **Noviembre 2025** | 5,755 | 4,826 | 264 | 368 | 297 | 0 | S/. 945,448.10 |
-| **Diciembre 2025** | 5,175 | 4,464 | 236 | 421 | 54 | 0 | S/. 980,271.49 |
-| **TOTAL** | **33,503** | **29,000** | **1,436** | **2,274** | **793** | **0** | **S/. 4,873,686.93** |
+| **Julio 2025** | 5,683 | 4,993 | 216 | 395 | 79 | 0 | S/. 541,853.63 |
+| **Agosto 2025** | 5,456 | 4,868 | 198 | 376 | 14 | 0 | S/. 608,672.82 |
+| **Setiembre 2025** | 5,699 | 5,137 | 176 | 373 | 13 | 0 | S/. 502,409.00 |
+| **Octubre 2025** | 5,735 | 4,668 | 336 | 395 | 336 | 0 | S/. 1,389,308.53 |
+| **Noviembre 2025** | 5,755 | 4,817 | 261 | 380 | 297 | 0 | S/. 967,534.02 |
+| **Diciembre 2025** | 5,175 | 4,459 | 241 | 421 | 54 | 0 | S/. 1,021,995.75 |
+| **TOTAL** | **33,503** | **28,942** | **1,428** | **2,340** | **793** | **0** | **S/. 5,031,773.76** |
 
 > [!NOTE]
-> **Alcance LNS (2026-07-17)**: tabla recalculada íntegramente tras aplicar
+> **v3.1 (2026-07-17, corrida posterior a la de alcance)**: tabla
+> recalculada tras el fix del margen "o toca" (regla inmutable 1.4) y de una
+> fuga donde emergencias que perdían el desempate de unión (cuando una
+> hospitalización toca/solapa más de una emergencia candidata) quedaban sin
+> facturar en ninguna trama. Caso A sube de 2,274 a 2,340 (+66); Caso B baja
+> de 1,436 a 1,428 (-8, episodios que ahora se unen en vez de quedar como
+> estancia sintética separada); Tipo 2 baja de 29,000 a 28,942 (-58,
+> emergencias que ahora se unen). Detalle completo, con evidencia y queries,
+> en `CONTEXTO_CANONICO.md` §3, entrada v3.1.
+>
+> **Alcance LNS (2026-07-17)**: tabla recalculada tras aplicar
 > el filtro de alcance (`cfg_ipress_alcance`, ver `CONTEXTO_CANONICO.md`
-> §1.9). Reemplaza la versión multi-IPRESS anterior (Total: 53,708
-> emergencias / 47,816 Tipo 2 / 2,298 Caso B / 2,797 Caso A / 797 Cierre
-> Admin / S/. 6,879,013.18) — misma metodología de `CONTROL 13`/`CONTROL 14`,
-> misma partición con residuo 0 en los 6 meses, solo cambia el universo de
-> origen.
+> §1.9). La versión previa a la aplicación del alcance (multi-IPRESS)
+> reportaba Total: 53,708 emergencias / 47,816 Tipo 2 / 2,298 Caso B / 2,797
+> Caso A / 797 Cierre Admin / S/. 6,879,013.18 — misma metodología de
+> `CONTROL 13`/`CONTROL 14`, misma partición con residuo 0 en los 6 meses,
+> solo cambia el universo de origen.
 
 > [!NOTE]
 > **Metodología de "Facturación Recuperada Neto"**: se calcula como el diff antes/después de valorización por trama (`CONTROL 14`), no como una suma de tarifas nominales. Del lado hospitalización, se toma un snapshot de la valorización de cada estancia **antes** de aplicar la unión Caso A o insertar Caso B (capturado al inicio de `12_RECLASIFICAR_emergencias_24h.sql`, antes de mutar nada); así una estancia Caso A aporta solo su incremento real (la extensión de días), no el valor completo de la estancia original otra vez. Del lado emergencia, "antes" valoriza cada atención como si fuera Tipo 2 (tarifa por prioridad), y "después" solo las que sobreviven como Tipo 2. Los procedimientos/laboratorio que se mueven de trama conservan su propia valorización de origen y no aportan al neto.
@@ -185,9 +214,9 @@ Además del descarte automático, el pipeline extrajo alertas de auditoría méd
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Médico Distinto (Revisar)** ⁽¹⁾ | 384 | 297 | 371 | 271 | 296 | 283 | **1,902** |
 | **Cantidad Distinta (Revisar)** ⁽¹⁾ | 277 | 209 | 148 | 0 | 0 | 2 | **636** |
-| **Transiciones Emergencia→Hospitalización (CONTROL 5)** | 673 | 643 | 609 | 819 | 717 | 729 | **4,190** |
+| **Transiciones Emergencia→Hospitalización (CONTROL 5)** ⁽³⁾ | 675 | 641 | 610 | 822 | 714 | 745 | **4,207** |
 | **Estancias Contiguas/Solapadas en CPT (CONTROL 9)** | 39 | 37 | 39 | 6 | 8 | 15 | **144** |
-| **Duplicados en Origen** ⁽²⁾ | 1,774 | 1,580 | 1,772 | 1,081 | 994 | 1,164 | **8,365** |
+| **Duplicados en Origen** ⁽²⁾ ⁽³⁾ | 1,835 | 1,676 | 1,882 | 1,118 | 1,007 | 1,346 | **8,864** |
 | **Estancias de emergencia sin CPMS en origen (informativo)** ⁽¹⁾ | 1,812 | 1,830 | 2,039 | 1,841 | 1,621 | 1,538 | **10,681** |
 | **CPMS Derivado Hospitalización** ⁽¹⁾ | 861 | 1,002 | 1,095 | 1,286 | 1,257 | 1,376 | **6,877** |
 
@@ -204,7 +233,14 @@ Además del descarte automático, el pipeline extrajo alertas de auditoría méd
 > (post-fix del 2026-07-16, ver `CONTEXTO_CANONICO.md` §3) — es una fuente
 > distinta y mayor a la del cierre anterior (2,309), no solo un efecto del
 > alcance; ver sección 8, punto 5 de este mismo informe para el detalle de
-> esa reconciliación.
+> esa reconciliación. ⁽³⁾ **Recalculadas para v3.1** (fix "o toca" +
+> desempate, ver `CONTEXTO_CANONICO.md` §3): CONTROL 5 sube de 4,190 a 4,207
+> (+17, variación menor esperada — más pares E→H terminan unidos en vez de
+> aparecer como transición informativa suelta); Duplicados en Origen sube de
+> 8,365 a 8,864 (+499, más procedimientos/laboratorio pasan al paquete
+> retenido de Caso A, cambiando qué queda en la población que se revisa por
+> duplicado de origen). CONTROL 9 no cambia (144) — es interno a CPT, no
+> depende de la unión Emergencia→Hospitalización.
 >
 > **Corrección heredada del cierre anterior**: la fila que antes se llamaba
 > "Estancias Contiguas/Solapadas (C11)" y se describía como CONTROL 9 en
@@ -249,31 +285,37 @@ de auditoría:
 
 | Período | Pares Caso A | Duplicados Ciertos Residuales | Filas RETENIDA (hospitalización) | A1 | A2 | A3 (ciclo) | A3 (CONTROL 10) | A4 (alcance) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Julio 2025** | 620 | 0 | 637 | OK | OK | OK | OK | OK |
-| **Agosto 2025** | 594 | 0 | 608 | OK | OK | OK | OK | OK |
-| **Setiembre 2025** | 557 | 0 | 558 | OK | OK | OK | OK | OK |
-| **Octubre 2025** | 753 | 0 | 783 | OK | OK | OK | OK | OK |
-| **Noviembre 2025** | 658 | 0 | 660 | OK | OK | OK | OK | OK |
-| **Diciembre 2025** | 682 | 0 | 682 | OK | OK | OK | OK | OK |
-| **TOTAL** | **3,864** | **0** | **3,928** | | | | | |
+| **Julio 2025** | 395 | 0 | 395 | OK | OK | OK | OK | OK |
+| **Agosto 2025** | 376 | 0 | 376 | OK | OK | OK | OK | OK |
+| **Setiembre 2025** | 373 | 0 | 378 | OK | OK | OK | OK | OK |
+| **Octubre 2025** | 395 | 0 | 397 | OK | OK | OK | OK | OK |
+| **Noviembre 2025** | 380 | 0 | 384 | OK | OK | OK | OK | OK |
+| **Diciembre 2025** | 421 | 0 | 426 | OK | OK | OK | OK | OK |
+| **TOTAL** | **2,340** | **0** | **2,356** | | | | | |
 
 > [!NOTE]
-> **Dos correcciones de este cierre**: (1) **Alcance LNS** — tabla
-> recalculada bajo el nuevo alcance (reemplaza el total multi-IPRESS de
-> 5,431 pares Caso A). (2) **Fix del contador RETENIDA** (regla 8 del
-> ancla) — "Pares Caso A" ahora es el conteo real de estancias unidas
-> (`eh_groups` en `generate_outputs_v2.py`, la misma población que queda en
-> la hoja `ESTANCIAS_E_H` del libro de auditoría), y "Filas RETENIDA" le
-> suma el paquete de procedimientos/laboratorio que se mueve junto con cada
-> par (637−620=17 en julio, por ejemplo). Antes del fix, ese paquete se
-> contaba como LIMPIA en `metricas.json` (facturación aplicada) en vez de
-> RETENIDA (propuesta pendiente de Auditoría Médica) — ver
-> `CONTEXTO_CANONICO.md` §3, entrada 2026-07-17. La cifra vieja de "Pares
-> Caso A" (667 en julio, 5,431 el semestre) venía de una query de
-> emparejamiento distinta que mezclaba los pares reales con coincidencias
-> del propio Caso B recién insertado (ver reconciliación abajo) — la nueva
-> cifra usa directamente la población que el pipeline ya identifica como
-> Caso A internamente, sin ese ruido.
+> **v3.1 (2026-07-17, corrida posterior a la de alcance)**: tabla
+> recalculada tras el fix del margen "o toca" (regla inmutable 1.4). "Pares
+> Caso A" baja de 3,864 (versión LNS anterior) a 2,340 — **no es una
+> pérdida de cobertura**: la cifra anterior (3,864) incluía un bug de
+> auto-match en `eh_groups` (la consulta de pares corría después de que el
+> paso 8 ya insertaba las estancias sintéticas Caso B, y se emparejaba
+> consigo misma) que sobreestimaba el conteo real de uniones. La cifra
+> correcta y verificada por `CONTROL 13` (`caso_a_unidas`) es **2,340** —
+> ver `CONTEXTO_CANONICO.md` §3, entrada v3.1, para la evidencia completa
+> (verificado en julio: 220 de 241 filas "fantasma" del conteo viejo eran
+> auto-match puro). "Filas RETENIDA" sigue sumando el paquete de
+> procedimientos/laboratorio que se mueve junto con cada par (378−373=5 en
+> septiembre, por ejemplo).
+>
+> **Dos correcciones del cierre de alcance (2026-07-17, corrida anterior a
+> v3.1)**: (1) **Alcance LNS** — tabla recalculada bajo el nuevo alcance
+> (reemplaza el total multi-IPRESS de 5,431 pares Caso A). (2) **Fix del
+> contador RETENIDA** (regla 8 del ancla) — "Filas RETENIDA" pasó a incluir
+> el paquete de procedimientos/laboratorio que antes se contaba como LIMPIA
+> en `metricas.json` (facturación aplicada) en vez de RETENIDA (propuesta
+> pendiente de Auditoría Médica) — ver `CONTEXTO_CANONICO.md` §3, entrada
+> 2026-07-16.
 
 > [!NOTE]
 > **Metodología anterior (superada en este cierre)**: hasta el cierre
@@ -345,6 +387,51 @@ Durante la corrida del lote semestral, se identificaron y resolvieron las siguie
     `informativa`) al calcular `limpia`. El residuo de la aserción A1 sigue
     en 0 en los 6 meses — es un fix de clasificación, no de conservación.
     Ver sección 6 para las cifras corregidas.
+13. **Regla 1.4 ("se solapa o toca") no implementada en la unión Caso A
+    (2026-07-17, v3.1) — RESUELTO**:
+    Ni el SQL que arma las tramas (`12_RECLASIFICAR_emergencias_24h.sql`)
+    ni la re-derivación independiente del libro de auditoría
+    (`generate_outputs_v2.py`) tenían el margen de 1 día que exige "toca".
+    Se corrigió con una tabla `temp_union_ganadora` (`DISTINCT ON` por
+    hospitalización, margen +1 día, desempate por brecha mínima) como única
+    fuente de verdad, consumida tanto por el SQL como por Python vía la
+    nueva columna `id_emergencia_unida`. Detalle completo en
+    `CONTEXTO_CANONICO.md` §3, entrada v3.1.
+14. **Bug de auto-match en el libro de auditoría — RETENIDA hospitalización
+    sobreestimada (2026-07-17, v3.1) — RESUELTO**:
+    Encontrado al investigar por qué el benchmark contra la hoja manual
+    seguía teniendo un bucket grande de "solo pipeline" tras el fix de "o
+    toca". La consulta vieja de `eh_groups` corría después de que el paso 8
+    ya insertaba las estancias sintéticas Caso B, y una estancia Caso B
+    tiene exactamente las mismas fechas que su propia emergencia de origen
+    — la consulta se emparejaba consigo misma. v3.0 había publicado RETENIDA
+    hospitalización = 637 para julio; el valor real (verificado por
+    `CONTROL 13`) era 379. Un segundo bug relacionado (emergencias que
+    tocan/solapan una hospitalización pero pierden el desempate frente a
+    otra emergencia del mismo paciente) hacía que esos casos desaparecieran
+    de las 4 tramas sin facturarse en ningún lado (2 casos en julio,
+    verificados por documento). Ambos corregidos: el valor final correcto
+    para julio es RETENIDA hospitalización = 395, verificado por dos
+    caminos independientes (`CONTROL 13` y `metricas.json`) que ahora
+    coinciden exactamente. Ver sección 6 y `CONTEXTO_CANONICO.md` §3.
+15. **Reincorporación de decisiones de auditoría (script 13) no podía
+    restaurar la fila Tipo 2 de una emergencia unida — RESUELTO**:
+    Encontrado al probar end-to-end la reincorporación de las emergencias
+    ≤24h absorbidas por el fix de "o toca" (entorno de prueba aislado, sin
+    tocar ningún expediente real). Dos bugs preexistentes, no causados por
+    "o toca" pero expuestos al probarlo: (a) la lista de estancias
+    restaurables (`retained_emer_stays`) se armaba filtrando por
+    `excluir_tipo2 = false`, exactamente lo opuesto de toda emergencia
+    unida — por construcción estaba vacía para el 100% de los pares Caso A,
+    siempre, no solo los nuevos por "toca"; "NO SE UNE" nunca había podido
+    devolver la fila Tipo 2 de una emergencia unida. (b) El revert de
+    fechas/días/valorización de la hospitalización usaba una fuente que se
+    consulta DESPUÉS de que el paso 8 ya extendió la estancia, así que el
+    "revert" no revertía nada. Ambos corregidos y probados con un caso real
+    de julio: la hospitalización revierte a sus fechas/días/valorización
+    originales y la emergencia recupera su fila Tipo 2 con el CPMS correcto
+    por prioridad. Detalle completo en `CONTEXTO_CANONICO.md` §3, entrada
+    v3.1, punto 4.
 
 ---
 
@@ -357,21 +444,31 @@ Durante la corrida del lote semestral, se identificaron y resolvieron las siguie
 3. **Actualización de Tarifario (Tarifas en Cero)**:
    Se identificaron procedimientos que se valorizan con importe "cero" debido a la falta de concordancia entre los códigos del petitorio LNS y los códigos estandarizados CPMS. Es urgente actualizar la tabla de equivalencias de precios de la IPRESS para evitar pérdidas financieras.
 4. **Alerta Automática a las 20 horas de Estancia en Emergencia**:
-   Se recomienda implementar una alerta automática en el sistema SIGESAPOL cuando un paciente cumpla **20 horas continuas de permanencia en Emergencia**. Esto servirá de aviso temprano al personal médico y administrativo para gestionar el traslado físico y formal del paciente a Hospitalización o su alta oportuna, evitando las reclasificaciones tardías. Los **1,436 casos del semestre** (alcance LNS; 2,298 en la versión multi-IPRESS anterior) que terminaron convirtiéndose en hospitalizaciones de facto (Caso B) sustentan la necesidad crítica de esta alerta como instrumento de control y reducción de glosas.
+   Se recomienda implementar una alerta automática en el sistema SIGESAPOL cuando un paciente cumpla **20 horas continuas de permanencia en Emergencia**. Esto servirá de aviso temprano al personal médico y administrativo para gestionar el traslado físico y formal del paciente a Hospitalización o su alta oportuna, evitando las reclasificaciones tardías. Los **1,428 casos del semestre** (v3.1, alcance LNS; 1,436 en la corrida LNS previa a "o toca"; 2,298 en la versión multi-IPRESS anterior) que terminaron convirtiéndose en hospitalizaciones de facto (Caso B) sustentan la necesidad crítica de esta alerta como instrumento de control y reducción de glosas.
 5. **Conteo de "Duplicados de Origen" en `generate_outputs_v2.py` — resuelto**:
    La incidencia técnica #6 (llave de deduplicación sin discriminador por tipo) había dejado el conteo informativo de "duplicados de origen" en un rango implausible (17,000-53,000 por mes). El fix del 2026-07-16 (incorporar el ID único del registro a la llave de agrupación, ver `CONTEXTO_CANONICO.md` §3) lo resolvió: bajo el alcance LNS de este cierre, el campo `duplicados_origen` de `metricas.json` da 994-1,774 por mes (sección 5, fila "Duplicados en Origen") — un rango plausible, mayor al de la versión multi-IPRESS anterior (149-582) porque usa una fuente de conteo distinta (y más completa) desde el fix, no solo un efecto del alcance. No afecta la facturación de las tramas ni las secciones 4 ni 6 de este informe.
-6. **Pendiente de decisión — regla 1.4 ("se solapa o toca") incompleta en `eh_groups`**:
+6. **Regla 1.4 ("se solapa o toca") incompleta en `eh_groups` — RESUELTO en v3.1 (2026-07-17)**:
    Al recalcular el benchmark de julio contra la hoja manual de la gestión
    anterior (`expedientes/benchmark_v3_julio.md`), se encontró que el JOIN
-   real que arma los pares Caso A en `generate_outputs_v2.py` solo exige
-   solapamiento estricto de fechas — no implementa el margen de "toca" que
-   pide la regla inmutable 1.4 (`CONTEXTO_CANONICO.md` §1.4): una
-   hospitalización que empieza el día calendario siguiente al alta de
-   emergencia (transferencia física inmediata) no se une hoy como Caso A.
-   Impacto medido en julio: **30 de 512 pares manuales (5.9%)** que la hoja
-   de la gestión anterior sí unifica y el pipeline no. `CONTROL 5` ya
-   clasifica esta categoría por separado ("CONTIGUO") pero solo de forma
-   informativa. **No se corrigió en este cierre** — hacerlo cambiaría los
-   conteos de Caso A/RETENIDA de los 6 meses ya cerrados (secciones 4 y 6)
-   y requiere una decisión explícita y una nueva corrida completa antes de
-   aplicarse.
+   real que arma los pares Caso A en `generate_outputs_v2.py` solo exigía
+   solapamiento estricto de fechas — no implementaba el margen de "toca" que
+   pide la regla inmutable 1.4. Se corrigió (ver incidencia técnica #13);
+   los 30 de 512 pares manuales (5.9%) que la hoja de la gestión anterior
+   unificaba y el pipeline no ahora coinciden. Durante la corrección se
+   encontraron y resolvieron dos bugs adicionales no buscados (incidencias
+   #14 y #15) — el benchmark honesto de julio bajó de 94.9% (preliminar,
+   inflado por el bug #14) a **93.6%** (final, ver
+   `expedientes/benchmark_v3_julio.md`).
+7. **Pendiente de decisión — cadenas multi-episodio en el desempate de Caso A**:
+   El desempate determinista que introduce v3.1 (`temp_union_ganadora`,
+   `DISTINCT ON` por hospitalización) elige **una sola** emergencia por
+   hospitalización cuando hay más de una candidata que toca/solapa la misma
+   estancia — no modela cadenas reales (p. ej. Hospitalización 1 → Emergencia
+   → Hospitalización 2 como un solo episodio extendido). Verificado: 78
+   hospitalizaciones del semestre (bajo el margen estricto, antes de "toca")
+   tenían más de una emergencia candidata; con el margen ampliado la cifra
+   sube a ~150. Queda para revisión de Auditoría Médica si el volumen
+   resulta clínicamente relevante — no se amplía el alcance de esta
+   corrección sin una decisión explícita, dado que redefinir el desempate
+   como cadena requeriría un rediseño del algoritmo de unión, no solo un
+   ajuste de condición.

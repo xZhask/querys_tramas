@@ -100,13 +100,13 @@
 
 | Métrica | Valor | Estado |
 | --- | --- | --- |
-| Doble cobro evitado, semestre completo (jul-dic 2025) | **S/. 490,401.29** (9,761 duplicados ciertos) | Verificado — coincide con §2 de `INFORME_CIERRE_SEMESTRE.md`, suma de `metricas.json.deduplicacion` de los 6 meses |
-| Recuperación neta por regla 24h, semestre completo (jul-dic 2025), **metodología corregida con snapshot pre-Caso-A** | **S/. 4,873,686.93** | Verificado por `CONTROL 14` (04_CONTROL_integridad.sql, paso 9), suma de `recuperacion_neta_estancias` de los 6 meses |
-| Julio 2025, recuperación neta por regla 24h (metodología corregida) | **S/. 513,587.46** | Verificado por `CONTROL 14`, `expedientes/2025-07/03_INFORMATIVOS/controles_integridad_raw.txt` |
-| Partición Sección 4 (Tipo2+CasoA+CasoB+CierreAdmin=Total, residuo 0) | Semestre: 29,000+2,274+1,436+793=33,503 | Verificado por `CONTROL 13`, residuo 0 en los 6 meses |
+| Doble cobro evitado, semestre completo (jul-dic 2025) | **S/. 490,401.29** (9,761 duplicados ciertos) | Verificado — coincide con §2 de `INFORME_CIERRE_SEMESTRE.md`, suma de `metricas.json.deduplicacion` de los 6 meses. Sin cambio en v3.1 (la deduplicación es independiente del fix "o toca") |
+| Recuperación neta por regla 24h, semestre completo (jul-dic 2025), **v3.1 (fix "o toca" + fuga de desempate)** | **S/. 5,031,773.76** | Verificado por `CONTROL 14` (04_CONTROL_integridad.sql, paso 9), suma de `recuperacion_neta_estancias` de los 6 meses. Sube +S/. 158,086.83 (+3.2%) frente a v3.0 (S/. 4,873,686.93) — ver §3, entrada v3.1 |
+| Julio 2025, recuperación neta por regla 24h (v3.1) | **S/. 541,853.63** | Verificado por `CONTROL 14`, `expedientes/2025-07/03_INFORMATIVOS/controles_integridad_raw.txt` |
+| Partición Sección 4 (Tipo2+CasoA+CasoB+CierreAdmin=Total, residuo 0) | Semestre v3.1: 28,942+2,340+1,428+793=33,503 | Verificado por `CONTROL 13`, residuo 0 en los 6 meses. Caso A sube de 2,274 (v3.0) a 2,340 (v3.1, +66 uniones netas: suma del fix "o toca" y del fix de fuga de desempate, ver §3); Caso B baja de 1,436 a 1,428 (-8 neto, episodios que antes quedaban como estancia sintética separada ahora se unen como Caso A) |
 | Cuadratura C1 (= aserción A1 de conservación: LIMPIA + RETENIDA + INFORMATIVA = total extraído) | Cierra en **residuo 0** por mes y por tipo de trama, los 6 meses | Verificado — las 4 aserciones (A1/A2/A3/A4) están en OK para los 6 meses |
-| Benchmark de eficiencia vs. proceso manual, julio 2025 (recalculado 2026-07-17) | **94.9%** (352/371, universo ajustado) | La hoja manual (`07 JULIO 2025 ESTANCIA TRABAJADA.xlsx`, aportada por el usuario, ya era 100% LNS) se cruzó contra `eh_groups` de `generate_outputs_v2.py` por (documento, rango extendido). De 453 discrepancias iniciales, 434 tienen causa estructural identificada (offset ≤2 días, cobertura SIGESAPOL-nativa nueva del pipeline, duplicado interno del pipeline, cruce de mes, y el hallazgo nuevo "CONTIGUO" — ver regla 1.4 y nota abajo); quedan 19 pares sin explicar (100% del lado "el pipeline encontró un par que la hoja manual no tiene"). Metodología y script completos en `expedientes/benchmark_v3_julio.md` / `benchmark_v3_julio_analisis.py` (no versionados, contienen documento de paciente). No es comparable 1:1 al 91.5%/8,388 vs 5,441 histórico — no hay query de origen preservada para esa cifra. |
-| Atenciones Tipo 2 (Emergencia) facturadas (CONTROL 15) | **29,000** atenciones / **S/. 1,009,347.62** | Verificado por CONTROL 15 en los 6 meses (Jul-Dic 2025) |
+| Benchmark de eficiencia vs. proceso manual, julio 2025 (recalculado 2026-07-17, versión v3.1 final) | **93.6%** (383/409, universo ajustado) | La hoja manual (`07 JULIO 2025 ESTANCIA TRABAJADA.xlsx`, aportada por el usuario, ya era 100% LNS) se cruzó contra `eh_groups` de `generate_outputs_v2.py` v3.1 (fix "o toca" + `id_emergencia_unida` como única fuente de pares, sin duplicados). De 201 discrepancias (395 pipeline vs 512 manual, 353 coinciden), 175 tienen causa estructural identificada (offset ≤2 días, cadena Caso B residual, cruce de mes); quedan 26 pares sin explicar, 100% del lado "el pipeline encontró un par que la hoja manual no tiene". **Reemplaza el 94.9% preliminar** (versión v3.0 de este benchmark): ese valor incluía un bucket "SIGESAPOL-nativo: 210" mal diagnosticado — 220 de esos 241 casos eran un bug de auto-match (ver §3, entrada v3.1), no cobertura real. Metodología y script completos en `expedientes/benchmark_v3_julio.md` / `benchmark_v3_julio_analisis.py` (no versionados, contienen documento de paciente). No es comparable 1:1 al 91.5%/8,388 vs 5,441 histórico — no hay query de origen preservada para esa cifra. |
+| Atenciones Tipo 2 (Emergencia) facturadas (CONTROL 15, v3.1) | **28,942** atenciones / **S/. 1,006,184.76** | Verificado por CONTROL 15 en los 6 meses (Jul-Dic 2025). Baja levemente de 29,000/S/.1,009,347.62 (v3.0) — emergencias que antes quedaban Tipo 2 ahora se unen como Caso A |
 | Alcance depurado (filas removidas en extracción por IPRESS fuera de LNS, semestre) | SIGESAPOL: 608,580 filas · CPT (laboratorio, join real a establecimiento_medico): 542 filas / S/. 9,757.61 | `log_alcance_depurado` en ambas BD — ver §3, entrada 2026-07-17, y `INFORME_CIERRE_SEMESTRE.md` para el detalle por mes/tabla |
 
 > **Resultado final de la Parte 1** (todo verificado por query contra la BD
@@ -323,6 +323,110 @@
   tocarlo. Quedan además 19 pares (de 591) genuinamente sin explicar,
   documentados en `expedientes/benchmark_v3_julio.md` §4, para revisión de
   Auditoría Médica.
+- **2026-07-17 — v3.1: fix regla 1.4 ("o toca") + duplicados internos + fuga
+  de emergencias que pierden el desempate**: siguiendo el hallazgo del
+  benchmark de julio (entrada anterior), se corrigió `eh_groups` para que
+  implemente el margen de 1 día que la regla inmutable 1.4 exige. Diagnóstico
+  de capas (pedido explícito de la misión, hecho antes de tocar código):
+  **ninguna capa** tenía el margen — ni el SQL de
+  `12_RECLASIFICAR_emergencias_24h.sql` (el que realmente arma las tramas)
+  ni la re-derivación independiente en `generate_outputs_v2.py` — impacto
+  mayor, como anticipaba la misión.
+  1. **Diseño — una sola fuente de verdad**: `12_RECLASIFICAR_emergencias_24h.sql`
+     gana una tabla `temp_union_ganadora` (`DISTINCT ON (h.row_uid)`, margen
+     +1 día, desempate por brecha mínima y luego por id) y una columna
+     `id_emergencia_unida` en `temp_hospitalizacion_local`. Verificado que
+     una hospitalización puede tocar/solapar más de una emergencia candidata
+     (dato real, no artefacto): bajo el margen viejo (estricto) ya había 78
+     casos de match múltiple en los 6 meses; con el margen ampliado sin
+     desempate hubieran sido ~150. `generate_outputs_v2.py` deja de redefinir
+     la condición de fecha — su consulta de `eh_groups` ahora es un JOIN
+     directo sobre `id_emergencia_unida`, sin ambigüedad posible.
+  2. **Corrección de RETENIDA hospitalización (v3.0 publicó 637)**: v3.0
+     publicó RETENIDA hospitalización = 637 (y "solapamientos_estancias" =
+     620 en `metricas.json`/`INFORME_CIERRE_SEMESTRE.md` §6); el valor
+     estaba sobreestimado por un bug de auto-match en `generate_outputs_v2.py`:
+     su consulta de `eh_groups` corría DESPUÉS de que el paso 8 ya había
+     insertado las estancias sintéticas Caso B, y como una estancia Caso B
+     tiene exactamente las mismas fechas que su propia emergencia de origen,
+     la consulta se emparejaba consigo misma. Verificado en julio: de 241
+     filas "h_id=None" del libro viejo, 220 eran auto-match puro (firma
+     exacta: fechas extendidas = fechas propias de la emergencia) y 21 eran
+     cadena Caso B genuina. **Valor real v3.0 (nivel SQL, `CONTROL 13`
+     `caso_a_unidas`): 379 episodios** para julio — no 637 ni 620. Desde
+     v3.1 la única fuente de pares es `id_emergencia_unida` +
+     `origen_reclasificacion = 'UNION_EMERGENCIA_HOSP'`, 1:1 por
+     construcción; RETENIDA hospitalización = número de hospitalizaciones
+     con esa marca, sin ambigüedad. **Definición de qué cuenta RETENIDA
+     hospitalización desde v3.1**: cada hospitalización con
+     `origen_reclasificacion = 'UNION_EMERGENCIA_HOSP'` cuenta 1 (la
+     estancia unida), más el paquete de procedimientos/laboratorio que
+     viaja con cada par — no se cuenta la emergencia por separado (queda
+     excluida de Tipo 2).
+  3. **Bug nuevo encontrado durante la verificación (no buscado, no
+     relacionado con "o toca"): emergencias que pierden el desempate
+     desaparecían de las 4 tramas sin dejar rastro.** Antes de esta
+     corrección, una emergencia >24h que toca/solapa una hospitalización
+     pero pierde el desempate frente a otra emergencia del mismo paciente
+     quedaba con `excluir_tipo2=true` (regla de duración, sección 2 de
+     `12_RECLASIFICAR_emergencias_24h.sql`) pero SIN unión real y SIN
+     estancia Caso B propia — ni facturada como Tipo 2 ni unida a ninguna
+     hospitalización. Verificado en julio: 2 casos (documentos 00237288 y
+     08479060, este último es el mismo caso usado como verificación cruzada
+     manual en el benchmark de julio). Corregido: el `INSERT` de Caso B
+     (sección 4) ahora se dispara para toda emergencia >24h que NO ganó el
+     desempate (`NOT IN temp_union_ganadora`), sin importar si toca
+     geométricamente una hospitalización ya tomada por otra emergencia — le
+     da su propia estancia Tipo 3 en vez de desaparecer. Con este fix,
+     `CONTROL 13` `caso_a_unidas` (395) y RETENIDA hospitalización de
+     `metricas.json` (395) **coinciden exactamente** — ya no hay
+     discrepancia de 2 que documentar; la causa era este bug, no "2
+     hospitalizaciones absorbiendo 2 emergencias cada una" (hipótesis de la
+     misión, descartada tras verificar).
+  4. **Verificación de las emergencias ≤24h absorbidas por "toca"**: 30 en
+     julio (no 13 — cifra de la misión era una hipótesis de trabajo,
+     verificada y corregida contra la BD), todas confirmadas presentes como
+     pares propuestos en la hoja `ESTANCIAS_E_H` del libro de auditoría con
+     decisión por defecto "SE UNE". Esto conecta con la nota pendiente de
+     Auditoría Médica sobre si corresponde facturar además el 9928x en la
+     doble atención E→H: si la decisión es "NO SE UNE", el mecanismo de
+     reincorporación debe poder devolverles su fila Tipo 2 completa. Se
+     probó ese camino end-to-end (entorno aislado, sin tocar ningún
+     expediente real) y se encontraron y corrigieron dos bugs preexistentes
+     (no causados por el fix de "o toca", pero expuestos al probarlo):
+     - `retained_emer_stays` (usado por `13_REINCORPORAR_decisiones.py`
+       para restaurar la fila Tipo 2) se armaba filtrando
+       `emergencia_raw` por `base == 'estancia en emergencia'`, pero esa
+       rama de `10_ARMADO_emergencia.sql` exige `excluir_tipo2 = false` —
+       exactamente lo opuesto de toda emergencia unida. Por construcción,
+       esa lista estaba **vacía para el 100% de los pares Caso A**, siempre
+       (no solo los nuevos por "toca"). "NO SE UNE" nunca había podido
+       restaurar la fila Tipo 2 de una emergencia unida. Corregido:
+       `generate_outputs_v2.py` vuelve a consultar directo (mismas columnas
+       que la rama original, sin el filtro) para las emergencias
+       efectivamente unidas.
+     - El revert de fechas/días/valorización de la hospitalización en "NO
+       SE UNE" usaba `hospitalizacion_raw`, que se consulta DESPUÉS de que
+       el paso 8 ya extendió la estancia — el "revert" no revertía nada
+       (reportaba la fecha ya extendida como si fuera la original).
+       Corregido usando el snapshot `temp_hospitalizacion_antes_reclasif`
+       (`dias_antes`/`valorizacion_antes` por `row_uid`, tomado ANTES de
+       reclasificar) para calcular la fecha de alta original
+       (`h_ing_orig + dias_antes - 1`), en vez de la columna
+       `fecha_alta` de `temp_bdt_hospitalizacion_local` (verificado: llega
+       vacía en el 100% de los casos, mezcla filas de procedimiento con la
+       de estancia). Probado end-to-end con un caso real de julio: la
+       hospitalización revierte correctamente a sus fechas/días/valorización
+       originales y la emergencia recupera su fila Tipo 2 con el CPMS
+       correcto por prioridad.
+  5. **Caveat sin resolver (mismo criterio que el hallazgo anterior, no se
+     amplía el alcance de esta corrección)**: el desempate "una emergencia
+     por hospitalización" no modela cadenas reales (ej. Hosp1→ER→Hosp2 como
+     un solo episodio extendido). Queda para revisión de Auditoría Médica si
+     el volumen de match múltiple (78 casos bajo margen estricto en los 6
+     meses) resulta clínicamente relevante.
+  6. Pipeline completo jul-dic re-corrido con el fix; A1-A4 en PASS y
+     `CONTROL 10` = 0 los 6 meses. Ver §2 para los números finales.
 
 ---
 

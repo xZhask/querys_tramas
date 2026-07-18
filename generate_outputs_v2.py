@@ -150,6 +150,15 @@ def main():
     # 1. Load CPT Hospitalization original dates for rollback
     cur.execute("SELECT id_prestacion_cpt, fecha_atencion, fecha_alta FROM temp_bdt_hospitalizacion_local;")
     orig_dates_cpt = {str(r[0]): (parse_date(r[1]), parse_date(r[2])) for r in cur.fetchall() if r[0] is not None}
+
+    # Días/valorización ANTES de reclasificar (12_RECLASIFICAR_emergencias_24h.sql,
+    # sección 1b), por row_uid - snapshot tomado antes de que el UPDATE de
+    # Caso A extienda la estancia, a diferencia de orig_dates_cpt (que puede
+    # traer una fila de procedimiento cualquiera con el mismo id_prestacion_cpt,
+    # no necesariamente la de la estancia). Usado por 13_REINCORPORAR_decisiones.py
+    # para revertir dias/valorización con exactitud en "NO SE UNE".
+    cur.execute("SELECT row_uid, dias_antes, valorizacion_antes FROM temp_hospitalizacion_antes_reclasif;")
+    antes_reclasif = {r[0]: (r[1], float(r[2]) if r[2] is not None else None) for r in cur.fetchall()}
     
     # Load raw stays and procedures from SQL armado scripts
     # We load them before any file outputs
@@ -174,10 +183,15 @@ def main():
     
     print(f"Loaded: {len(consulta_raw)} Consultation, {len(emergencia_raw)} Emergency, {len(hospitalizacion_raw)} Hospitalization, {len(farmacia_raw)} Farmacia records.")
     
-    # Load E->H pairs (Caso A)
-    # We match using patient DNI and date overlap
+    # Load E->H pairs (Caso A).
+    # La unión Emergencia->Hospitalización (regla 1.4: solapa o toca) ya la
+    # decidió 12_RECLASIFICAR_emergencias_24h.sql de forma determinista
+    # (h.id_emergencia_unida, un solo ganador por hospitalización). Python
+    # NO redefine la condición de fecha - solo consume esa unión, evitando
+    # que la lista de pares del libro de auditoría pueda tener duplicados
+    # internos (ver CONTEXTO_CANONICO.md §3, hallazgo "o toca").
     cur.execute("""
-        SELECT 
+        SELECT
             e.id_emergencia_sigesapol,
             e.sp_numero_documento_paciente,
             e.sp_fecha_atencion AS e_ing,
@@ -185,6 +199,7 @@ def main():
             h.id_prestacion_cpt,
             h.sp_fecha_atencion AS h_ing,
             h.sp_fecha_alta AS h_alt,
+            h.row_uid,
             e.sp_apellido_paterno_paciente,
             e.sp_apellido_materno_paciente,
             e.sp_nombres_paciente,
@@ -195,12 +210,10 @@ def main():
             e.sp_descripcion_dx_02,
             e.sp_codigo_dx_03,
             e.sp_descripcion_dx_03
-        FROM temp_emergencia_sigesapol_estancia e
-        JOIN temp_hospitalizacion_local h 
-          ON h.sp_numero_documento_paciente = e.sp_numero_documento_paciente
-         AND e.sp_fecha_atencion::date <= h.sp_fecha_alta::date
-         AND e.sp_fecha_alta_emergencia::date >= h.sp_fecha_atencion::date
-         AND NOT (TO_CHAR(e.sp_fecha_atencion, 'YYYY-MM') <> TO_CHAR(e.sp_fecha_alta_emergencia, 'YYYY-MM') AND (date(e.sp_fecha_alta_emergencia) - date(e.sp_fecha_atencion) + 1) > 15);
+        FROM temp_hospitalizacion_local h
+        JOIN temp_emergencia_sigesapol_estancia e
+          ON e.id_emergencia_sigesapol = h.id_emergencia_unida
+        WHERE h.origen_reclasificacion = 'UNION_EMERGENCIA_HOSP';
     """)
     pairs_rows = cur.fetchall()
     
@@ -212,15 +225,27 @@ def main():
     group_counter = 1
     
     for row in pairs_rows:
-        e_id, dni, e_ing, e_alt, h_id, h_ing, h_alt, pat_pat, pat_mat, pat_nom, prio, dx1, dx1_d, dx2, dx2_d, dx3, dx3_d = row
+        e_id, dni, e_ing, e_alt, h_id, h_ing, h_alt, row_uid, pat_pat, pat_mat, pat_nom, prio, dx1, dx1_d, dx2, dx2_d, dx3, dx3_d = row
         group_id = f"GRP_{group_counter:03d}"
         group_counter += 1
-        
+
         e_ing_dt = parse_date(e_ing)
         e_alt_dt = parse_date(e_alt)
         h_ing_dt = parse_date(h_ing)
         h_alt_dt = parse_date(h_alt)
-        
+        dias_antes, valorizacion_antes = antes_reclasif.get(row_uid, (None, None))
+        h_ing_orig_dt = orig_dates_cpt.get(str(h_id), (h_ing_dt, h_alt_dt))[0]
+        # h_alt_orig: temp_bdt_hospitalizacion_local.fecha_alta llega vacío en
+        # la práctica (0/395 poblado en julio) porque esa tabla mezcla filas
+        # de procedimiento con la de estancia y el diccionario se queda con
+        # una fila cualquiera. dias_antes SÍ es confiable (snapshot dedicado,
+        # 12_RECLASIFICAR_emergencias_24h.sql sección 1b) y da la alta real
+        # sin depender de esa columna.
+        h_alt_orig_dt = (
+            h_ing_orig_dt + datetime.timedelta(days=dias_antes - 1)
+            if h_ing_orig_dt is not None and dias_antes is not None else None
+        )
+
         pair_info = {
             'group_id': group_id,
             'dni': dni,
@@ -228,8 +253,10 @@ def main():
             'h_id': str(h_id),
             'e_ing': e_ing_dt,
             'e_alt': e_alt_dt,
-            'h_ing_orig': orig_dates_cpt.get(str(h_id), (h_ing_dt, h_alt_dt))[0],
-            'h_alt_orig': orig_dates_cpt.get(str(h_id), (h_ing_dt, h_alt_dt))[1],
+            'h_ing_orig': h_ing_orig_dt,
+            'h_alt_orig': h_alt_orig_dt,
+            'h_dias_orig': dias_antes,
+            'h_valorizacion_orig': valorizacion_antes,
             'h_ing_extended': e_ing_dt if h_ing_dt is None else min(e_ing_dt, h_ing_dt),
             'h_alt_extended': e_alt_dt if h_alt_dt is None else max(e_alt_dt, h_alt_dt),
             'prioridad': prio,
@@ -615,12 +642,82 @@ def main():
     with open(os.path.join(infos_dir, ".eh_groups.json"), 'w', encoding='utf-8') as f:
         # We save stays info
         # Let's save the original stay rows for Emergency and CPT hospitalization too!
-        # First find emergency stay rows:
+        # First find emergency stay rows. NO se pueden tomar de emergencia_raw:
+        # la rama "estancia en emergencia" de 10_ARMADO_emergencia.sql filtra
+        # WHERE e.excluir_tipo2 = false, y TODA emergencia unida en Caso A
+        # tiene excluir_tipo2 = true (paso 8) - por construcción esa fila
+        # nunca se extrae, y "NO SE UNE" en 13_REINCORPORAR_decisiones.py no
+        # tenía nada que restaurar (0 filas para las 395 uniones de julio,
+        # verificado). Se vuelve a consultar directo, sin el filtro, para las
+        # emergencias efectivamente unidas (paired_emergencies) - mismas
+        # columnas/orden que la rama original de 10_ARMADO_emergencia.sql.
         retained_emer_stays = []
-        for r in emergencia_raw:
-            if r.get('base') == 'estancia en emergencia':
-                if r.get('id_atencion_emergencia') in paired_emergencies:
-                    retained_emer_stays.append(r)
+        if paired_emergencies:
+            cur.execute("""
+                SELECT
+                    'estancia en emergencia'::text as base,
+                    prioridad,
+                    sp_tipo_documento_paciente, sp_numero_documento_paciente,
+                    sp_apellido_paterno_paciente, sp_apellido_materno_paciente, sp_nombres_paciente,
+                    sp_fecha_nacimiento_paciente AS sp_fecha_nacimiento, sp_genero_paciente, sp_condicion_asegurado, sp_tipo_atencion,
+                    sp_codigo_ipress, sp_nombre_ipress, e.sp_fecha_atencion, e.sp_fecha_alta_emergencia AS sp_fecha_alta,
+                    sp_tipo_documento_responsable, sp_numero_documento_responsable,
+                    sp_apellido_paterno_responsable, sp_apellido_materno_responsable, sp_nombres_responsable,
+                    sp_codigo_profesion_responsable AS sp_profesion_responsable, sp_codigo_especialidad AS sp_especialidad_responsable,
+                    sp_circunstancia_alta_sigesapol_sp::int AS sp_circunstancia_alta,
+                    sp_upss_codigo,
+                    regexp_replace(sp_upss_nombre, '\\r|\\n', '', 'g') as sp_upss_descripcion,
+                    '2' AS hospitalizacion,
+                    sp_tipo_dx_01, sp_codigo_dx_01, sp_descripcion_dx_01,
+                    sp_tipo_dx_02, sp_codigo_dx_02, sp_descripcion_dx_02,
+                    sp_tipo_dx_03, sp_codigo_dx_03, sp_descripcion_dx_03,
+                    'SIGESAPOL' AS digitador_prestacion,
+                    e.sp_fecha_atencion::date AS fecha_registro_prestacion,
+                    NULL::time AS hora_registro_prestacion,
+                    id_emergencia_sigesapol AS id_atencion_emergencia,
+                    CASE
+                        WHEN e.prioridad = 1 THEN '99285'
+                        WHEN e.prioridad = 2 THEN '99284'
+                        WHEN e.prioridad = 3 THEN '99282'
+                        WHEN e.prioridad = 4 THEN '99281'
+                        ELSE '99281'
+                    END as sp_codigo_procedimiento,
+                    CASE
+                        WHEN e.prioridad = 1 THEN 'Consulta en emergencia para evaluación y manejo de un paciente (Prioridad I)'
+                        WHEN e.prioridad = 2 THEN 'Consulta en emergencia para evaluación y manejo de un paciente (Prioridad II)'
+                        WHEN e.prioridad = 3 THEN 'Consulta en emergencia para evaluación y manejo de un paciente (Prioridad III)'
+                        WHEN e.prioridad = 4 THEN 'Consulta en emergencia para evaluación y manejo de un paciente (Prioridad IV)'
+                        ELSE 'Consulta en emergencia'
+                    END as sp_descripcion_procedimiento,
+                    1 AS sp_suma_cantidad,
+                    COALESCE((SELECT nivel_3 FROM cpt WHERE cod_cpt = (
+                        CASE
+                            WHEN e.prioridad = 1 THEN '99285'
+                            WHEN e.prioridad = 2 THEN '99284'
+                            WHEN e.prioridad = 3 THEN '99282'
+                            WHEN e.prioridad = 4 THEN '99281'
+                            ELSE '99281'
+                        END
+                    ) LIMIT 1), 15.31) as sp_valorizacion_total,
+                    sp_numero_documento_responsable as documento_responsable_cpt,
+                    concat(sp_apellido_paterno_responsable,' ',sp_apellido_materno_responsable,', ',sp_nombres_responsable) as nombre_responsable_cpt,
+                    sp_upss_codigo as upss_codigo_cpt,
+                    regexp_replace(sp_upss_nombre, '\\r|\\n', '', 'g') as upss_descripcion_cpt,
+                    e.sp_fecha_atencion as fecha_procedimiento,
+                    sp_upss_codigo as upss_codigo_procedimiento,
+                    regexp_replace(sp_upss_nombre, '\\r|\\n', '', 'g') as upss_descripcion_procedimiento,
+                    sp_numero_documento_responsable as numero_documento_responsable_procedimiento,
+                    sp_apellido_paterno_responsable as apellido_paterno_responsable_procedimiento,
+                    sp_apellido_materno_responsable as apellido_materno_responsable_procedimiento,
+                    sp_nombres_responsable as nombres_responsable_procedimiento,
+                    'SIGESAPOL' as digitador_cpt, e.sp_fecha_atencion::date as fecha_registro_cpt, NULL::time as hora_registro_cpt,
+                    ''::text as id_prestacion_cpt,
+                    ''::text as id_prestacion_laboratorio
+                FROM temp_emergencia_sigesapol_estancia e
+                WHERE e.id_emergencia_sigesapol = ANY(%s);
+            """, (list(paired_emergencies.keys()),))
+            cols_retained_eme = [col[0] for col in cur.description]
+            retained_emer_stays = [dict(zip(cols_retained_eme, row)) for row in cur.fetchall()]
                     
         # Find original CPT stay rows:
         retained_cpt_stays = []
