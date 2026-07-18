@@ -87,6 +87,21 @@
    (Legía, Arequipa, Chiclayo, San José y otros), que otro equipo debe
    facturar con otra base — ver §3, entrada 2026-07-17.*
 
+10. **`expedientes/` contiene PHI y está excluido del versionado**: toda la
+    carpeta (expedientes mensuales, libros de auditoría `02_AUDITORIA_*.xlsx`,
+    hojas de referencia manuales) trae documento/nombre de paciente y vive
+    fuera de git (`.gitignore`: `expedientes/` y, como red de seguridad
+    adicional, `*.xlsx` en cualquier ruta del repo — una hoja de referencia
+    puede soltarse fuera de esa carpeta, como pasó con la hoja manual de
+    julio mientras se podía etiquetar desde la raíz). Verificado 2026-07-18:
+    ningún `.xlsx` fue commiteado nunca en el historial de este repositorio
+    (`git log --all` sobre cualquier ruta `.xlsx`, vacío). Solo los
+    **agregados anónimos** (conteos, montos, porcentajes — nunca documento ni
+    nombre) entran a `CONTEXTO_CANONICO.md` o `INFORME_CIERRE_SEMESTRE.md`;
+    el detalle con PHI queda en `expedientes/` (p. ej.
+    `expedientes/benchmark_v3_julio.md`) o en scripts que lo consultan en
+    vivo, nunca en un archivo versionado.
+
 ---
 
 ## 2. NÚMEROS CANÓNICOS VERIFICADOS
@@ -427,6 +442,18 @@
      meses) resulta clínicamente relevante.
   6. Pipeline completo jul-dic re-corrido con el fix; A1-A4 en PASS y
      `CONTROL 10` = 0 los 6 meses. Ver §2 para los números finales.
+- **2026-07-18 — Protección de PHI: `.gitignore` reforzado + regla
+  inmutable §1.10**: la hoja manual de julio (`07 JULIO 2025 ESTANCIA
+  TRABAJADA.xlsx`) quedó sin protección de `.gitignore` en la raíz del
+  repositorio desde que el usuario la movió ahí (fuera de
+  `expedientes/referencias/`) el 2026-07-17. Verificado ANTES de tocar nada
+  (`git log --all` sobre cualquier ruta/archivo `.xlsx`, incluida la ruta
+  original): **nunca fue commiteado**, cero blobs con PHI en el historial —
+  no hizo falta reescribir historial. Se agregó `*.xlsx` a `.gitignore`
+  (además de `expedientes/`, que ya cubría el caso general) como red de
+  seguridad para cualquier hoja de referencia que se suelte fuera de esa
+  carpeta en el futuro. Confirmado por `git status` que el archivo queda
+  untracked/ignorado. Regla codificada como §1.10.
 
 ---
 
