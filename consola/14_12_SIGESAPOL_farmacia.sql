@@ -5,6 +5,7 @@
 -- Creado para la ejecucion autocontenida en la edicion consola.
 -- El prefijo indica el ORDEN ESTRICTO de ejecucion.
 -- ==============================================================================
+
 -- TRAMA GENERAL PARA ARMAR LAS TRAMAS I, II, III, IV
 --/**********************************************************/
 --/**********************************************************/
@@ -152,6 +153,7 @@ and e.id = (SELECT id_establecimiento_sigesapol FROM cfg_ipress_alcance) -- ALCA
 -- CONSULTA EXTERNA
 and rv.tipo_receta IN ('AMBULATORIO', 'SERVICIO NUTRICIONAL - AMBULATORIO', 'URGENCIA')
 and rv.fecha_expedicion::date between (SELECT p_ini FROM cfg_periodo) and (SELECT p_fin FROM cfg_periodo)
+and rv.fecha_registro::date between (SELECT p_ini FROM cfg_periodo) and (SELECT p_fin FROM cfg_periodo)
 
 -- EMERGENCIA LOCAL Y SIGESAPOL
 --and (rv.tipo_receta = 'EMERGENCIA')
@@ -175,4 +177,3 @@ a.sexo , a.fecha_nac, rv.codigo_upss, p.cod_trama,p.desc_trama, p.precio_trama, 
 -- ===> HOSPITALIZACION
 --, hospi.sp_fecha_alta, hospi.sp_circunstancia_alta
 ;
-

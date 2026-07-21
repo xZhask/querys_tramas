@@ -94,6 +94,7 @@ def parse_args():
     parser.add_argument("--year", type=int, default=2025)
     parser.add_argument("--month", type=int, required=True)
     parser.add_argument("--skip-control10", action="store_true", help="Omitir A3-CONTROL10 (no requiere BD)")
+    parser.add_argument("--skip-a7-db", action="store_true", help="Omitir A7-cobertura (no requiere BD de origen)")
     parser.add_argument("--allow-missing-conservacion", action="store_true",
                          help="No fallar si metricas.json fue generado antes de existir la tabla 'conservacion' (mes ya procesado con el codigo anterior)")
     return parser.parse_args()
@@ -275,7 +276,12 @@ def check_a5(infos_dir, tramas_dir, period, year, month):
                     print(f"A5 [{period}]: FALLO - {fname} tiene fechas fuera de la ventana ({len(fuera)} distintos, ej: {fuera[:3]})")
                     ok = False
 
-    # Hospitalizacion: sp_fecha_atencion <= p_fin AND (sp_fecha_alta IS NULL OR sp_fecha_alta >= p_ini)
+    # Hospitalizacion: regla inmutable 11 (CONTEXTO_CANONICO.md) - una
+    # estancia SOLO factura en el periodo de SU ALTA. fecha_alta debe existir
+    # (nunca NULL: eso seria una estancia abierta que no deberia estar en
+    # ninguna trama) y debe caer DENTRO del periodo (ni antes ni despues);
+    # fecha_atencion (ingreso) puede ser de un mes anterior si la estancia
+    # cruzo de mes - eso es arrastre legitimo, no error.
     h_cols = trama_cols.get("hospitalizacion", [])
     if "sp_fecha_atencion" in h_cols and "sp_fecha_alta" in h_cols:
         idx_atencion = h_cols.index("sp_fecha_atencion")
@@ -286,6 +292,7 @@ def check_a5(infos_dir, tramas_dir, period, year, month):
                 data = f.read().decode("utf-8")
             sep = "|\r\n" if "|\r\n" in data else "|\n"
             fuera_h = 0
+            sin_alta_h = 0
             for rec in data.split(sep):
                 if not rec.strip(): continue
                 parts = rec.split("|")
@@ -294,17 +301,21 @@ def check_a5(infos_dir, tramas_dir, period, year, month):
                     al_str = parts[idx_alta].strip()
                     if " " in at_str: at_str = at_str.split(" ")[0]
                     if " " in al_str: al_str = al_str.split(" ")[0]
-                    
+
+                    if not al_str:
+                        sin_alta_h += 1
+                        continue
                     try:
-                        at_d = datetime.datetime.strptime(at_str, "%Y-%m-%d").date() if at_str else p_ini
-                        al_d = datetime.datetime.strptime(al_str, "%Y-%m-%d").date() if al_str else p_fin
-                        
-                        if not (at_d <= p_fin and al_d >= p_ini):
+                        al_d = datetime.datetime.strptime(al_str, "%Y-%m-%d").date()
+                        if not (p_ini <= al_d <= p_fin):
                             fuera_h += 1
                     except ValueError:
                         pass
+            if sin_alta_h > 0:
+                print(f"A5 [{period}]: FALLO - trama_hospitalizacion.txt tiene {sin_alta_h} registros SIN fecha_alta (estancia abierta: no debe facturar hasta su propio periodo de alta, regla inmutable 11)")
+                ok = False
             if fuera_h > 0:
-                print(f"A5 [{period}]: FALLO - trama_hospitalizacion.txt tiene {fuera_h} registros fuera de la ventana de estancia")
+                print(f"A5 [{period}]: FALLO - trama_hospitalizacion.txt tiene {fuera_h} registros cuya fecha_alta cae FUERA de este periodo (debe facturar en el periodo de SU alta, regla inmutable 11)")
                 ok = False
                 
     if ok:
@@ -312,32 +323,38 @@ def check_a5(infos_dir, tramas_dir, period, year, month):
     return ok
 
 
-def check_a6(infos_dir, tramas_dir, period, allow_missing=False):
+def check_a6_integridad(infos_dir, tramas_dir, period, allow_missing=False):
+    """A6-INTEGRIDAD: el recuento FISICO de lineas de cada trama_*.txt debe
+    coincidir con lo que el propio metricas.json (volumenes_tramas) dice haber
+    escrito. Esto NO verifica cobertura contra el origen (ver A7-COBERTURA):
+    solo detecta corrupcion/truncamiento entre "lo que Python calculo" y "lo
+    que quedo fisicamente en disco" (p.ej. un \\r embebido que parte una fila
+    en dos lineas fisicas, o una escritura interrumpida)."""
     path = os.path.join(infos_dir, "metricas.json")
     if not os.path.exists(path):
-        print(f"A6 [{period}]: FALLO - no existe {path}")
+        print(f"A6-integridad [{period}]: FALLO - no existe {path}")
         return False
     with open(path, "r", encoding="utf-8") as f:
         metrics = json.load(f)
     volumenes_tramas = metrics.get("volumenes_tramas")
     if not volumenes_tramas:
-        print(f"A6 [{period}]: FALLO - metricas.json no tiene 'volumenes_tramas'")
+        print(f"A6-integridad [{period}]: FALLO - metricas.json no tiene 'volumenes_tramas'")
         return False
-        
+
     archivos = {
         "trama_consulta_externa": "trama_consulta_externa.txt",
         "trama_emergencia": "trama_emergencia.txt",
         "trama_hospitalizacion": "trama_hospitalizacion.txt",
         "trama_farmacia": "trama_farmacia.txt",
     }
-    
+
     ok = True
     for key, fname in archivos.items():
         expected = volumenes_tramas.get(key, 0)
         p = os.path.join(tramas_dir, fname)
         if not os.path.exists(p):
             if expected > 0:
-                print(f"A6 [{period}]: FALLO - no existe {fname} pero se esperaban {expected} filas")
+                print(f"A6-integridad [{period}]: FALLO - no existe {fname} pero se esperaban {expected} filas")
                 ok = False
             continue
         with open(p, "rb") as f:
@@ -345,11 +362,320 @@ def check_a6(infos_dir, tramas_dir, period, allow_missing=False):
         records = split_records(data)
         actual = len(records)
         if actual != expected:
-            print(f"A6 [{period}]: FALLO - {fname} tiene {actual} lineas fisicas, pero metricas.json reporta {expected}")
+            print(f"A6-integridad [{period}]: FALLO - {fname} tiene {actual} lineas fisicas, pero metricas.json reporta {expected}")
             ok = False
-            
+
     if ok:
-        print(f"A6 [{period}]: PASS (Recuento fisico de lineas en txt coincide con metricas.json)")
+        print(f"A6-integridad [{period}]: PASS (Recuento fisico de lineas en txt coincide con metricas.json)")
+    return ok
+
+
+# ============================================================================
+# A7-COBERTURA
+# ----------------------------------------------------------------------------
+# A6-integridad solo compara el pipeline contra SI MISMO (metricas.json vs
+# los .txt que el mismo proceso escribio) - por eso "quedo mal implementada"
+# como asercion de cobertura: un mes con 0 filas reales pero un metricas.json
+# coherente (p.ej. porque el guardian de periodo aborto en un paso intermedio
+# y el proceso re-uso metricas.json de una corrida anterior) pasaria A6 sin
+# problema. A7 corta ese punto ciego: cuenta las prestaciones DIRECTAMENTE en
+# las tablas de ORIGEN (prestacion_cpt/procedimiento_cpt en CPT;
+# emergencias/hospitalizaciones/prestaciones+prestacion_procedimientos en
+# SIGESAPOL), con una consulta que NO pasa por ninguna tabla temp_* del
+# pipeline, y la contrasta contra volumenes_raw de metricas.json.
+#
+# LIMITE DOCUMENTADO (verificado contra julio 2025 real, no solo en teoria):
+# un intento inicial de exigir origen - alcance_depurado == volumenes_raw
+# EXACTO fallo en las 4 tramas de julio con brechas de 5% a 150%, todas por
+# motivos LEGITIMOS que esta consulta independiente no puede replicar barato:
+#   - log_alcance_depurado no distingue tipo_atencion dentro de
+#     temp_sigesapol_procedimientos (una sola fila de log para consulta+
+#     emergencia+hospitalizacion juntas), asi que no se puede restar alcance
+#     por tipo de forma confiable.
+#   - la extraccion real exige AL MENOS UN diagnostico activo (INNER JOIN a
+#     receta_diagnosticos/diagnostico_cpt con estado=1/'N') que este conteo
+#     de origen no replica; una prestacion sin diagnostico activo cuenta aqui
+#     pero no en volumenes_raw.
+#   - una estancia de emergencia se cuenta por su fecha de ALTA, pero sus
+#     procedimientos por su propia fecha de atencion: una estancia que cruza
+#     fin de mes reparte procedimientos entre dos periodos de forma legitima.
+# Por eso A7 NO exige igualdad ni una tolerancia chica: valida ORDEN DE
+# MAGNITUD (suficiente para el objetivo real de la mision: detectar "trama
+# vacia con metricas coherente" y fugas de periodo groseras tipo
+# contaminacion entre meses), no aritmetica exacta byte a byte (eso ya lo
+# prueba A1 con residuo 0, sobre numeros que el propio pipeline calculo).
+# Falla fuerte solo cuando:
+#   (a) la trama final tiene 0 filas y el origen tiene > 0 (el caso pedido
+#       explicitamente: "trama vacia con metricas coherente"), o
+#   (b) volumenes_raw supera el origen independiente por mas del margen
+#       MULTIPLICADOR_A7_MAX (fuga de periodo real: se extrajo mucho mas de
+#       lo que el origen del mes puede explicar, como septiembre arrastrando
+#       miles de filas de mayo/junio/julio en la mision original).
+# ============================================================================
+
+MULTIPLICADOR_A7_MAX = 3.0  # volumenes_raw no deberia superar 3x el origen independiente
+# ^ Calibrado en vivo contra julio 2025 (post-fix de PARCHE B/D, ver
+# 01_PARCHES_funciones.sql): hospitalizacion queda en ~2.2x-2.6x de forma
+# LEGITIMA, confirmado por el equipo: una hospitalizacion/emergencia factura
+# en el periodo de SU ALTA, arrastrando procedimientos de meses anteriores si
+# la estadia cruzo de mes (regla de negocio, no bug). Mi conteo de origen
+# aqui es por mes calendario (no por ventana de estancia especifica, que es
+# lo que SI corrigen las funciones parchadas) porque replicar esa ventana
+# exacta en una consulta "independiente" exigiria re-derivar la misma logica
+# de agrupacion por estancia que ya se corrigio en la BD - de poco valor
+# adicional y con su propio riesgo de divergir. 3.0x da margen holgado sobre
+# el ~2.6x legitimo observado, sin dejar de detectar una fuga de orden de
+# magnitud mayor (la version con el bug de PARCHE D/FIX 6 sin corregir traia
+# 101,467 filas de temp_bdt_hospitalizacion_local con fechas desde 2018,
+# frente a un origen de un solo mes de ~33,000 - eso SI hubiera disparado
+# cualquier umbral razonable).
+
+SIGESAPOL_ORIGEN_SQL = {
+    "emergencia_estancias": """
+        SELECT COUNT(*) FROM emergencias e
+        WHERE e.fecha_alta_medica IS NOT NULL AND e.estado = 5
+          AND e.fecha_alta_medica::date BETWEEN %s AND %s
+    """,
+    "hospitalizacion_estancias": """
+        SELECT COUNT(*) FROM hospitalizaciones h
+        WHERE h.fecha_alta_medica IS NOT NULL
+          AND h.fecha_alta_medica::date BETWEEN %s AND %s
+    """,
+    "consulta_procedimientos": """
+        SELECT COUNT(*) FROM prestaciones pre
+        JOIN prestacion_procedimientos pp ON pp.id_prestacion = pre.id
+        JOIN procedimientos p2 ON p2.id = pp.id_procedimiento
+        WHERE pre.id_tipo_atencion IN (1, 5, 7)
+          AND p2.tipo_procedimiento IN (1, 2, 3)
+          AND pre.fecha_atencion >= %s AND pre.fecha_atencion < %s::date + INTERVAL '1 day'
+    """,
+    "emergencia_procedimientos": """
+        SELECT COUNT(*) FROM prestaciones pre
+        JOIN prestacion_procedimientos pp ON pp.id_prestacion = pre.id
+        JOIN procedimientos p2 ON p2.id = pp.id_procedimiento
+        WHERE pre.id_tipo_atencion = 2
+          AND p2.tipo_procedimiento IN (1, 2, 3)
+          AND pre.fecha_atencion >= %s AND pre.fecha_atencion < %s::date + INTERVAL '1 day'
+    """,
+    "hospitalizacion_procedimientos": """
+        SELECT COUNT(*) FROM prestaciones pre
+        JOIN prestacion_procedimientos pp ON pp.id_prestacion = pre.id
+        JOIN procedimientos p2 ON p2.id = pp.id_procedimiento
+        WHERE pre.id_tipo_atencion IN (3, 6, 8)
+          AND p2.tipo_procedimiento IN (1, 2, 3)
+          AND pre.fecha_atencion >= %s AND pre.fecha_atencion < %s::date + INTERVAL '1 day'
+    """,
+    "farmacia": """
+        SELECT COUNT(*) FROM receta_vales rv
+        JOIN producto_recetas pr ON pr.id_receta_vale = rv.id
+        JOIN productos p ON p.id = pr.id_producto
+        WHERE rv.estado = 1 AND pr.cantidad_dispensada > 0 AND p.petitorio = 'SI'
+          -- Mismas categorias de tipo_receta activas hoy en
+          -- 12_SIGESAPOL_farmacia.sql (rama CONSULTA EXTERNA). Si ese archivo
+          -- cambia de rama activa (EMERGENCIA/HOSPITALIZACION), esta lista
+          -- debe actualizarse junto con el.
+          AND rv.tipo_receta IN ('AMBULATORIO', 'SERVICIO NUTRICIONAL - AMBULATORIO', 'URGENCIA')
+          AND rv.fecha_expedicion::date BETWEEN %s AND %s
+          AND rv.fecha_registro::date BETWEEN %s AND %s
+    """,
+}
+
+CPT_ORIGEN_SQL = {
+    # prestacion_cpt no tiene columna de establecimiento: ya es LNS-only por
+    # construccion (verificado en CONTEXTO_CANONICO.md §3), por eso no hace
+    # falta excluir alcance de este lado.
+    "consulta_procedimientos": """
+        SELECT COUNT(DISTINCT r.id_procedimiento_cpt)
+        FROM prestacion_cpt t
+        JOIN diagnostico_cpt d ON d.id_prestacion_cpt = t.id_prestacion_cpt AND d.estado = 'N'
+        JOIN procedimiento_cpt r ON r.id_diagnostico_cpt = d.id_diagnostico_cpt
+        WHERE t.origen = 'CONSULTA' AND t.estado = 'N'
+          -- CONSULTA no tiene fecha_egreso (es ambulatoria, sin alta): se usa
+          -- fecha_registro de la cabecera, verificado en vivo (fecha_egreso
+          -- viene NULL siempre para este origen).
+          AND t.fecha_registro::date BETWEEN %s AND %s
+    """,
+    "hospitalizacion_procedimientos": """
+        SELECT COUNT(DISTINCT r.id_procedimiento_cpt)
+        FROM prestacion_cpt t
+        JOIN diagnostico_cpt d ON d.id_prestacion_cpt = t.id_prestacion_cpt AND d.estado = 'N'
+        JOIN procedimiento_cpt r ON r.id_diagnostico_cpt = d.id_diagnostico_cpt
+        WHERE t.origen = 'HOSPITALIZACION' AND t.estado = 'N'
+          AND r.fecha_egreso::date BETWEEN %s AND %s
+    """,
+}
+
+
+def _conectar(dbname, host, port, user, password):
+    import psycopg2
+    return psycopg2.connect(f"dbname={dbname} user={user} password={password} host={host} port={port}")
+
+
+def check_a7_cobertura(year, month, period, infos_dir, skip):
+    if skip:
+        print(f"A7-cobertura [{period}]: SKIPPED (--skip-a7-db, no se verifico contra BD de origen)")
+        return True
+
+    path = os.path.join(infos_dir, "metricas.json")
+    if not os.path.exists(path):
+        print(f"A7-cobertura [{period}]: FALLO - no existe {path}")
+        return False
+    with open(path, "r", encoding="utf-8") as f:
+        metrics = json.load(f)
+    volumenes_raw = metrics.get("volumenes_raw")
+    volumenes_tramas = metrics.get("volumenes_tramas", {})
+    if not volumenes_raw:
+        print(f"A7-cobertura [{period}]: FALLO - metricas.json no tiene 'volumenes_raw'")
+        return False
+
+    host = os.environ.get("PGHOST", "localhost")
+    port = os.environ.get("PGPORT", "5432")
+    user = os.environ.get("PGUSER", "postgres")
+    password = os.environ.get("PGPASSWORD", "root")
+    cpt_dbname = os.environ.get("PGDATABASE", "db_cpt_junio26")
+    sig_dbname = os.environ.get("PGDATABASE_SIGESAPOL", "sigesapol_junio")
+
+    import datetime
+    p_ini = datetime.date(year, month, 1)
+    last_day = __import__("calendar").monthrange(year, month)[1]
+    p_fin = datetime.date(year, month, last_day)
+
+    try:
+        conn_cpt = _conectar(cpt_dbname, host, port, user, password)
+        conn_sig = _conectar(sig_dbname, host, port, user, password)
+    except Exception as e:
+        print(f"A7-cobertura [{period}]: FALLO - no se pudo conectar a las BD de origen ({e})")
+        return False
+
+    ok = True
+    try:
+        cur_cpt = conn_cpt.cursor()
+        cur_sig = conn_sig.cursor()
+
+        def sig(clave):
+            params = (p_ini, p_fin) if clave != "farmacia" else (p_ini, p_fin, p_ini, p_fin)
+            cur_sig.execute(SIGESAPOL_ORIGEN_SQL[clave], params)
+            return cur_sig.fetchone()[0]
+
+        def cpt(clave):
+            cur_cpt.execute(CPT_ORIGEN_SQL[clave], (p_ini, p_fin))
+            return cur_cpt.fetchone()[0]
+
+        # origen_total por trama = estancias (donde aplica) + procedimientos,
+        # sumando SIGESAPOL y CPT: misma granularidad de fila que las tramas
+        # finales (que unen cabecera de estancia + detalle de procedimiento/
+        # laboratorio, ver 09/10/11_ARMADO_*.sql).
+        origenes = {
+            "consulta": sig("consulta_procedimientos") + cpt("consulta_procedimientos"),
+            "emergencia": sig("emergencia_estancias") + sig("emergencia_procedimientos"),
+            "hospitalizacion": (
+                sig("hospitalizacion_estancias") + sig("hospitalizacion_procedimientos")
+                + cpt("hospitalizacion_procedimientos")
+            ),
+            "farmacia": sig("farmacia"),
+        }
+        tramas_key = {
+            "consulta": "trama_consulta_externa", "emergencia": "trama_emergencia",
+            "hospitalizacion": "trama_hospitalizacion", "farmacia": "trama_farmacia",
+        }
+
+        print(f"--- A7-cobertura [{period}]: desglose por trama (orden de magnitud, no aritmetica exacta) ---")
+        for tipo, origen_total in origenes.items():
+            raw = volumenes_raw.get(tipo, 0)
+            trama_final = volumenes_tramas.get(tramas_key[tipo], 0)
+            ratio = (raw / origen_total) if origen_total else float("inf")
+
+            print(f"  {tipo}: origen_independiente={origen_total} vs volumenes_raw={raw} "
+                  f"(ratio={ratio:.2f}x, limite={MULTIPLICADOR_A7_MAX}x) | trama_final={trama_final}")
+
+            if trama_final == 0 and origen_total > 0:
+                print(f"A7-cobertura [{period}]: FALLO - {tipo} tiene la trama final en 0 filas pero el origen reporta {origen_total} prestaciones del periodo (trama vacia con metricas coherente).")
+                ok = False
+                continue
+            if origen_total == 0 and raw > 0:
+                print(f"A7-cobertura [{period}]: FALLO - {tipo} extrajo {raw} filas pero el origen independiente no encuentra NINGUNA prestacion del periodo (fuga de periodo: el guardian no protegio la extraccion).")
+                ok = False
+                continue
+            if origen_total > 0 and raw > origen_total * MULTIPLICADOR_A7_MAX:
+                print(f"A7-cobertura [{period}]: FALLO - {tipo} extrajo {raw} filas, mas de {MULTIPLICADOR_A7_MAX}x el origen independiente ({origen_total}). Posible fuga de periodo (contaminacion con otro mes).")
+                ok = False
+
+        cur_cpt.close()
+        cur_sig.close()
+    finally:
+        conn_cpt.close()
+        conn_sig.close()
+
+    if ok:
+        print(f"A7-cobertura [{period}]: PASS (orden de magnitud de origen consistente con lo extraido en las 4 tramas)")
+    return ok
+
+
+# ============================================================================
+# A8-NO-DUPLICACION ENTRE PERIODOS
+# ----------------------------------------------------------------------------
+# Ninguna prestacion (documento + fecha + codigo_procedimiento) puede
+# aparecer en las tramas de DOS periodos distintos - eso es doble cobro entre
+# envios (p.ej. estancias hospitalarias largas que arrastran filas de un mes
+# anterior). Compara el periodo actual contra TODOS los demas periodos que ya
+# existan en expedientes/ (se salta a si mismo). Control permanente: se debe
+# correr en cada cierre de periodo, una vez que existan periodos previos.
+# ============================================================================
+
+def _claves_periodo(tramas_dir, cols_por_tipo):
+    archivos = {
+        "consulta": ("trama_consulta_externa.txt", ["sp_numero_documento_paciente", "sp_fecha_atencion", "sp_codigo_procedimiento"]),
+        "emergencia": ("trama_emergencia.txt", ["sp_numero_documento_paciente", "sp_fecha_atencion", "sp_codigo_procedimiento"]),
+        "hospitalizacion": ("trama_hospitalizacion.txt", ["sp_numero_documento_paciente", "sp_fecha_atencion", "sp_codigo_procedimiento"]),
+    }
+    claves = set()
+    for tipo, (fname, key_names) in archivos.items():
+        cols = cols_por_tipo.get(tipo, [])
+        claves |= load_trama_keys(os.path.join(tramas_dir, fname), cols, key_names)
+    return claves
+
+
+def check_a8_no_duplicacion(year, month, period):
+    exp_root = "expedientes"
+    exp_dir = os.path.join(exp_root, period)
+    infos_dir = os.path.join(exp_dir, "03_INFORMATIVOS")
+    tramas_dir = os.path.join(exp_dir, "01_TRAMAS")
+    cols_path = os.path.join(infos_dir, ".trama_columns.json")
+    if not os.path.exists(cols_path):
+        print(f"A8-no-duplicacion [{period}]: FALLO - no existe {cols_path}")
+        return False
+    with open(cols_path, "r", encoding="utf-8") as f:
+        cols_actual = json.load(f)
+    claves_actual = _claves_periodo(tramas_dir, cols_actual)
+
+    if not os.path.isdir(exp_root):
+        print(f"A8-no-duplicacion [{period}]: FALLO - no existe la carpeta {exp_root}")
+        return False
+
+    otros_periodos = sorted(
+        d for d in os.listdir(exp_root)
+        if d != period and os.path.isdir(os.path.join(exp_root, d))
+        and os.path.exists(os.path.join(exp_root, d, "03_INFORMATIVOS", ".trama_columns.json"))
+    )
+    if not otros_periodos:
+        print(f"A8-no-duplicacion [{period}]: PASS trivial (no hay otros periodos generados aun para comparar)")
+        return True
+
+    ok = True
+    for otro in otros_periodos:
+        otro_infos = os.path.join(exp_root, otro, "03_INFORMATIVOS")
+        otro_tramas = os.path.join(exp_root, otro, "01_TRAMAS")
+        with open(os.path.join(otro_infos, ".trama_columns.json"), "r", encoding="utf-8") as f:
+            cols_otro = json.load(f)
+        claves_otro = _claves_periodo(otro_tramas, cols_otro)
+        repetidas = claves_actual & claves_otro
+        if repetidas:
+            ejemplo = sorted(repetidas)[:5]
+            print(f"A8-no-duplicacion [{period}]: FALLO - {len(repetidas)} prestaciones de {period} tambien aparecen en las tramas de {otro} (doble cobro entre envios). Ejemplos: {ejemplo}")
+            ok = False
+
+    if ok:
+        print(f"A8-no-duplicacion [{period}]: PASS (cero prestaciones compartidas con {len(otros_periodos)} periodo(s) previamente generado(s): {otros_periodos})")
     return ok
 
 
@@ -470,7 +796,7 @@ def main():
     infos_dir = os.path.join(exp_dir, "03_INFORMATIVOS")
     audit_path = os.path.join(exp_dir, f"02_AUDITORIA_{period}.xlsx")
 
-    print(f"=== Verificando aserciones A1/A2/A3/A4/A5/A6 para {period} ===")
+    print(f"=== Verificando aserciones A1-A8 para {period} ===")
     results = [
         check_a1(infos_dir, period, allow_missing=args.allow_missing_conservacion),
         check_a2(exp_dir, infos_dir, tramas_dir, period),
@@ -478,7 +804,9 @@ def main():
         check_a3_control10(year, month, period, args.skip_control10),
         check_a4(infos_dir, tramas_dir, period),
         check_a5(infos_dir, tramas_dir, period, year, month),
-        check_a6(infos_dir, tramas_dir, period, allow_missing=args.allow_missing_conservacion),
+        check_a6_integridad(infos_dir, tramas_dir, period, allow_missing=args.allow_missing_conservacion),
+        check_a7_cobertura(year, month, period, infos_dir, args.skip_a7_db),
+        check_a8_no_duplicacion(year, month, period),
     ]
 
     if all(results):

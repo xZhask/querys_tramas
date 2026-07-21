@@ -5,6 +5,7 @@
 -- Creado para la ejecucion autocontenida en la edicion consola.
 -- El prefijo indica el ORDEN ESTRICTO de ejecucion.
 -- ==============================================================================
+
 -- ============================================================================
 -- 08_CONSOLIDAR_fuentes_para_armado.sql
 -- Consolida canónico + complemento DENTRO de las tablas que el armado ya lee
@@ -64,6 +65,23 @@ BEGIN
 	IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='temp_sigesapol_procedimientos') THEN
 		RAISE EXCEPTION 'Falta temp_sigesapol_procedimientos (correr archivo 06 en SIGESAPOL y trasladar)';
 	END IF;
+	IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='temp_sigesapol_cfg_periodo') THEN
+		RAISE EXCEPTION 'Falta temp_sigesapol_cfg_periodo. Reinicia la ejecución desde el Paso 1.';
+	END IF;
+    
+    DECLARE
+        v_ini DATE;
+        v_fin DATE;
+        s_ini DATE;
+        s_fin DATE;
+    BEGIN
+        SELECT p_ini, p_fin INTO v_ini, v_fin FROM cfg_periodo LIMIT 1;
+        SELECT p_ini, p_fin INTO s_ini, s_fin FROM temp_sigesapol_cfg_periodo LIMIT 1;
+
+        IF (v_ini <> s_ini OR v_fin <> s_fin) THEN
+            RAISE EXCEPTION 'Desfase de periodo: CPT solicita % - % pero SIGESAPOL entregó % - %. Reinicie desde el Paso 1.', v_ini, v_fin, s_ini, s_fin;
+        END IF;
+    END;
 END $$;
 
 
@@ -453,4 +471,3 @@ ORDER BY 1, 2;
 -- IMPORTANTE: este script es de una sola pasada por período. Si necesitas
 -- re-correrlo, primero regenera las tablas con el paso 2 (03_MAESTRO), porque
 -- la consolidación modifica las tablas en el lugar.
-

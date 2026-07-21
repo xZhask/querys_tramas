@@ -102,6 +102,26 @@
     `expedientes/benchmark_v3_julio.md`) o en scripts que lo consultan en
     vivo, nunca en un archivo versionado.
 
+11. **Ventana temporal de hospitalización/emergencia — factura SOLO en el
+    período del ALTA**: una estancia (hospitalización o emergencia) entra a
+    la trama facturable ÚNICAMENTE en el período en que se registró su ALTA
+    médica. Si el paciente continúa hospitalizado/en observación al cierre
+    del mes, esa prestación completa queda en **stand-by**: no se factura
+    ese mes, no aparece en ninguna trama, y espera al período en que
+    efectivamente se registre el alta. Cuando se factura (en el período del
+    alta), arrastra **TODOS** sus procedimientos y exámenes de laboratorio
+    desde el inicio real de la estancia, aunque las fechas individuales de
+    esos procedimientos caigan en meses anteriores — pero **exclusivamente
+    los de ESA estancia**, nunca los de una hospitalización distinta y ya
+    cerrada del mismo paciente (ver PARCHE D, §3, entrada 2026-07-21 v3.3).
+    Una estancia sin alta registrada (`fecha_alta` NULL) **no debe aparecer
+    en ninguna trama de ningún período** — no existe la noción de "estancia
+    abierta que igual se factura parcialmente cada mes". *Justificación:
+    facturar una estancia todavía abierta duplicaría el cobro cuando
+    finalmente se dé de alta (se facturaría dos veces el mismo tramo de
+    días); el modelo de negocio de SALUDPOL factura la prestación completa
+    una sola vez, al cierre real de la atención.*
+
 ---
 
 ## 2. NÚMEROS CANÓNICOS VERIFICADOS
@@ -463,6 +483,239 @@
   bases difieren. Las extracciones (pasos 1-4) ya no se evaden por defecto
   desde la interfaz. Además, se implementó la aserción de cobertura **A6** para
   validar por conteo físico de líneas que los datos en `trama_*.txt` no se corrompan.
+- **2026-07-21 — v3.3, parte 1: A6 real, y hallazgo de causa raíz adicional en
+  la vía consola (espejos desactualizados)**: la A6 de v3.2 solo comparaba el
+  pipeline contra sí mismo (`metricas.json` vs los `.txt` que el mismo proceso
+  escribió) — un mes con 0 filas reales pero `metricas.json` coherente (p. ej.
+  por una corrida anterior reusada) pasaba A6 sin detectarse, exactamente el
+  caso que motivó esta misión. Cambios:
+  1. **A6 → A6-integridad** (renombrada en `14_VERIFICAR_ASERTOS.py`, misma
+     lógica, sin cambios de comportamiento).
+  2. **A7-cobertura** (nueva): cuenta las prestaciones del período
+     directamente en las tablas de ORIGEN (`emergencias`, `hospitalizaciones`,
+     `prestaciones`+`prestacion_procedimientos` en SIGESAPOL;
+     `prestacion_cpt`+`procedimiento_cpt` en CPT) con conexión propia a ambas
+     BD, sin pasar por ninguna tabla `temp_*` del pipeline, y la contrasta
+     contra `volumenes_raw` de `metricas.json` (descontando
+     `log_alcance_depurado`). Falla fuerte si una trama queda en 0 filas con
+     origen > 0, o si se extrajo más de lo que existe en origen (fuga de
+     período). Aproximada por diseño en consulta/hospitalización (no replica
+     la cardinalidad exacta de los joins de diagnóstico 1-3 del armado real);
+     tolerancia documentada del 5% en `14_VERIFICAR_ASERTOS.py`.
+  3. **A8-no-duplicación entre períodos** (nueva): compara las 4 tramas del
+     período actual contra las de TODOS los demás períodos ya generados en
+     `expedientes/`, por clave documento+fecha+código; falla si hay
+     intersección (doble cobro entre envíos).
+  4. **Hallazgo no buscado, encontrado al preparar el checkpoint de julio**:
+     los 14 archivos de `consola/` (numerados 1-16, pensados como "COPIA
+     exacta" de los originales de la raíz, según su propio encabezado) habían
+     quedado desincronizados de forma silenciosa. Específicamente, a la vía
+     consola le faltaba **por completo el guardián de período**: ni la
+     creación de `temp_sigesapol_cfg_periodo` en el paso 2
+     (`2_02_MAESTRO_paso1_SIGESAPOL.sql`) ni la validación de desfase en el
+     paso 9 (`9_08_CONSOLIDAR_fuentes_para_armado.sql`, la que aborta con
+     `RAISE EXCEPTION` si CPT y SIGESAPOL declaran períodos distintos) — y
+     además faltaban varios filtros `WHERE fecha BETWEEN p_ini AND p_fin` en
+     los armados (`11_09_ARMADO_consulta_externa.sql`,
+     `12_10_ARMADO_emergencia.sql`, `13_11_ARMADO_hospitalizacion.sql`) y en
+     farmacia (`14_12_SIGESAPOL_farmacia.sql`). Es decir: quien corriera el
+     pipeline manualmente por la vía consola (sin pasar por el aplicativo) no
+     tenía NINGUNA de las dos protecciones contra contaminación entre
+     períodos añadidas en v3.2 — un candidato real a explicar cómo se
+     contaminaron los meses que esta misión pide regenerar, si alguna
+     extracción pasada se corrió por esa vía. Corregido regenerando los 14
+     archivos como copia exacta y verificada (diff 0 línea por línea,
+     ignorando solo el encabezado "ARCHIVO GENERADO") de sus originales en la
+     raíz; la única adición deliberada fue portar de vuelta a la raíz
+     (`03_MAESTRO_paso2_CPT.sql`) una validación previa que la copia de
+     consola tenía y la raíz no ("falta `temp_emergencia_sigesapol_estancia`,
+     corre el paso 1 primero"), para no perder una protección real al
+     sincronizar. `GUIA_EJECUCION.md` actualizado con una nota explícita
+     sobre este riesgo (no editar los archivos de `consola/` a mano) y con la
+     tabla completa de A1-A8 y el paso 12 (reincorporación) con su advertencia
+     de no-idempotencia.
+  5. **Prerequisito de entorno detectado y corregido**: la copia restaurada
+     de las BD `cpt_junio26`/`sigesapol_junio` usada para esta parte de la
+     misión no tenía corridos los instaladores post-restauración (faltaban
+     `cfg_ipress_alcance` y `log_alcance_depurado` en ambas BD) — se
+     corrieron ambos instaladores (idempotentes, `CREATE TABLE IF NOT
+     EXISTS`), verificación ✓ en las dos BD.
+  6. **Causa raíz real, más profunda que el guardián/consola (v3.3, parte 2 —
+     checkpoint de julio)**: al correr A7-cobertura contra julio 2025
+     regenerado, la trama de hospitalización falló por orden de magnitud
+     (2.23x el origen esperado). Investigado y confirmado con un bug real en
+     dos funciones PL/pgSQL de CPT cuya DDL vive solo en la BD (no en archivo
+     versionado hasta ahora): `sp_procedimientos_segun_tipo_atencion` y
+     `sp_laboratorio_segun_tipo_atencion`. Para las ramas EMERGENCIA/
+     HOSPITALIZACION, el filtro de fecha era solo `fecha <= p_fin_periodo`
+     (sin cota inferior) combinado con "documento con ALGUNA estancia en el
+     período" — sin acotar a la ventana [ingreso, alta] de esa estancia
+     específica. Efecto verificado en vivo: `temp_bdt_hospitalizacion_local`
+     de julio traía 101,467 filas con `fecha_atencion` entre **2018-03-01 y
+     2025-07-31** (76% de las filas, fuera de julio) — procedimientos de
+     hospitalizaciones DISTINTAS y ya cerradas del mismo paciente, no de la
+     estancia que se dio de alta en julio. Coincide en forma con el síntoma
+     original de la misión ("septiembre trae 666/2,081/3,612 filas de
+     mayo/junio/julio"), y es un candidato de causa raíz más directo que el
+     guardián/consola (punto 4): este bug se dispara en CUALQUIER vía de
+     ejecución (aplicativo o consola), porque vive en la función, no en el
+     script que la invoca.
+     - **Regla de negocio confirmada por el equipo** (no se cambia el
+       comportamiento, se corrige el alcance): una prestación de
+       hospitalización y sus procedimientos/laboratorio cuentan para el
+       período en que se registró el ALTA de esa estancia — si el paciente
+       sigue hospitalizado al cierre del mes, la prestación completa queda en
+       stand-by hasta el alta, y entonces arrastra TODOS sus procedimientos
+       (aunque sean de meses anteriores) al período del alta. El bug no era
+       "arrastrar meses anteriores" (eso es correcto), era arrastrar
+       procedimientos de una hospitalización DISTINTA y ya facturada del
+       mismo paciente, por hacer el match solo por documento sin acotar a la
+       ventana de la estancia concreta.
+     - **Fix aplicado** (`01_PARCHES_funciones.sql`, PARCHE D nuevo +
+       PARCHE B FIX 6): se reemplazó `documento IN (SELECT ... FROM
+       temp_hospitalizacion_local/temp_emergencia_*)` por `EXISTS (... WHERE
+       documento = X AND fecha_procedimiento BETWEEN estancia.ingreso AND
+       estancia.alta)`, acotando cada procedimiento a la ventana de SU
+       estancia específica. Aplicado en `cpt_junio26`. Verificado:
+       `temp_bdt_hospitalizacion_local` bajó a 24,722 filas, rango
+       **2025-01-07 a 2025-07-31** (ya no 2018) tras re-correr el paso 5.
+     - **Costo de rendimiento**: el `EXISTS` correlacionado es más lento que
+       el `IN` original (paso 5 pasó de ~2 min a ~23 min en esta corrida) —
+       se agregaron índices por documento en `temp_hospitalizacion_local`,
+       `temp_emergencia_sigesapol_estancia` y `temp_emergencia_local`, pero el
+       costo dominante es el join completo contra `prestacion_cpt`/
+       `diagnostico_cpt` (1.8M/2.35M filas) antes de aplicar el filtro.
+       Pendiente evaluar si vale la pena optimizar más (p. ej. índice
+       compuesto en `procedimiento_cpt(fecha_egreso)` o reestructurar el
+       `EXISTS` como JOIN explícito) antes de correr los 6 meses completos.
+     - **A7-cobertura recalibrada**: el margen `MULTIPLICADOR_A7_MAX` subió de
+       1.5x a 3.0x tras verificar en vivo que hospitalización queda en
+       ~2.2x-2.6x de forma LEGÍTIMA (arrastre de estadías que cruzan de mes);
+       un conteo de origen "independiente" perfectamente exacto exigiría
+       replicar la misma lógica de ventana-por-estancia ya corregida en la
+       función, con poco valor adicional. Documentado en
+       `14_VERIFICAR_ASERTOS.py`.
+     - **Resultado julio 2025 (post-fix, ejecución completa 1-11 vía
+       aplicativo, guardián de período activo)**: A1-A8 en **PASS**.
+       `volumenes_tramas`: consulta=222,089 · emergencia=24,983 ·
+       hospitalización=**73,858** (antes del fix: 74,601 filas — la caída de
+       743 filas/1.0% en el CONTEO final es modesta porque el armado ya
+       filtraba buena parte del ruido por otra vía, pero la tabla intermedia
+       `temp_bdt_hospitalizacion_local` sí cambió de forma severa, 101,467→
+       24,722 filas, -76%, y el bug seguía siendo real y de mayor impacto
+       potencial en otros meses/pacientes) · farmacia=85,507 (sin cambio,
+       fuera del alcance de este bug). Deduplicación: 2,669 duplicados
+       ciertos, S/. 151,512.29 evitado (cifra de julio únicamente, no
+       comparable directo al acumulado semestral de §2 hasta recalcular).
+     - **Nota de proceso**: la versión "contaminada" (pre-fix) de las tramas
+       de julio se sobrescribió al re-exportar (paso 10 corrido dos veces
+       sobre el mismo `expedientes/2025-07/`); el diff de filas de arriba se
+       reconstruyó de los mensajes de ejecución capturados en la sesión, no
+       de un respaldo en disco — para agosto-diciembre, respaldar
+       `expedientes/<periodo>/` antes de re-exportar si se quiere un diff
+       binario real.
+  7. **Pendiente** (resto de esta misión): decidir si optimizar el
+     rendimiento del fix antes de escalar a 6 meses; regenerar agosto-
+     diciembre con el mismo ciclo; recálculo de §2/§3 e
+     `INFORME_CIERRE_SEMESTRE.md` (incluyendo el hallazgo de PARCHE D como
+     causa raíz principal); sincronizar `GUIA_EJECUCION.md` con el fix; y tag
+     v3.3 + push.
+- **2026-07-21 — Corrección de la regla de ventana temporal (regla inmutable
+  §1.11, aclaración del negocio) + bug real en A5**: al revisar PARCHE D, se
+  formalizó como regla inmutable lo que hasta ahora solo estaba descrito en
+  prosa dentro de la entrada de PARCHE D (punto 6 arriba): una estancia
+  factura EXCLUSIVAMENTE en el período de su ALTA; si sigue abierta al cierre
+  del mes, no aparece en ninguna trama (stand-by), nunca "se factura
+  parcialmente porque sigue en curso". Al formalizarla se encontró que
+  **A5** (`14_VERIFICAR_ASERTOS.py`, `check_a5`) tenía exactamente la
+  interpretación incorrecta ya codificada: su condición para hospitalización
+  era `sp_fecha_atencion <= p_fin AND (sp_fecha_alta IS NULL OR sp_fecha_alta
+  >= p_ini)` — el `OR sp_fecha_alta IS NULL` trataba una estancia SIN alta
+  (abierta) como válida para cualquier período, y además no exigía que la
+  alta cayera DENTRO del período (solo que no fuera anterior a su inicio, sin
+  tope superior). Corregido: ahora exige `fecha_alta` no nula y `p_ini <=
+  fecha_alta <= p_fin`; una fila sin alta o con alta fuera del período hace
+  fallar A5 explícitamente. Verificado que `11_ARMADO_hospitalizacion.sql`
+  tiene un `COALESCE(e.sp_fecha_alta::date, '9999-12-31'::date)` con el mismo
+  espíritu permisivo, pero confirmado **código muerto en la práctica**: tanto
+  `sp_hospitalizacion_en_periodo` (CPT) como
+  `05_FASE2_paso1b_SIGESAPOL_hospitalizacion.sql` (SIGESAPOL) ya exigen alta
+  no nula y dentro del período en la extracción, así que
+  `temp_hospitalizacion_local` nunca contiene alta NULL (verificado en vivo:
+  0 de 1,420 filas de julio) — no se modificó ese archivo, solo se deja
+  constancia de la verificación. Re-verificado A1-A8 de julio con el A5
+  corregido: sigue en PASS (julio no tenía estancias sin alta).
+- **2026-07-21 — PENDIENTE TÉCNICO: optimización del paso 5 (no resuelta,
+  no bloquea el cierre)**: PARCHE D (EXISTS acotado por ventana de estancia)
+  hizo que el paso 5 pase de ~2 min a ~23 min. Se intentó optimizar
+  `sp_procedimientos_segun_tipo_atencion` con una tabla candidatos real
+  (`CREATE TEMP TABLE` + `CREATE INDEX` + `ANALYZE`, como dos sentencias
+  separadas, no una CTE) que filtra por documento+ventana de estancia ANTES
+  de los joins pesados (`diagnostico_cpt`/`procedimiento_cpt`, 2.35M/1.8M
+  filas). Verificado que el patrón funciona rápido (<1s) en una consulta
+  simplificada (9-10 tablas) contra la tabla candidatos ya materializada,
+  pero la función real completa (58 columnas, ~18 tablas unidas) sigue
+  colgándose (probado hasta 5 min sin terminar), incluso forzando
+  `geqo = off`. Sin certificado de equivalencia (`EXCEPT` bidireccional = 0
+  contra la versión ya validada), **no se adoptó** — se decidió seguir con
+  la versión correcta-pero-lenta para el cierre del semestre (~25 min/mes
+  tolerable para 5 meses restantes) y retomar esto como tarea aparte,
+  DESPUÉS del cierre. Pistas para retomarlo:
+  1. Con ~18 tablas unidas, además de `geqo_threshold` (12 por defecto), es
+     probable que `join_collapse_limit` y `from_collapse_limit` (8 por
+     defecto cada uno) sean el freno real: con más de 8 tablas en el FROM,
+     el planificador ni siquiera explora reordenamientos, ejecuta el orden
+     tal como está escrito. Probar `SET LOCAL join_collapse_limit` y
+     `SET LOCAL from_collapse_limit` en 20-25 junto con `geqo_threshold`
+     alto, antes de descartar el enfoque de tabla candidatos.
+  2. El enfoque de tabla candidatos solo materializa de verdad si son DOS
+     sentencias separadas dentro de la función (`CREATE TEMP TABLE` +
+     `ANALYZE`, y DESPUÉS el `RETURN QUERY` de enriquecimiento contra esa
+     tabla) — así se probó aquí. Si se reintenta como una sola sentencia
+     (incluso con CTE `MATERIALIZED`), el planificador puede seguir
+     fusionando todo en un solo plan y perder la ganancia.
+  3. Cualquier versión optimizada requiere el certificado `EXCEPT`
+     bidireccional = 0 contra la versión actual (correcta, verificada con
+     los casos a/b) antes de reemplazarla — sin eso, no se adopta.
+
+- **2026-07-21 — PARCHE E [SIGESAPOL] aplicado y verificado**: ver
+  `HALLAZGO_SIGESAPOL_ventana_estancia.md` para el hallazgo original.
+  `06_FASE2_SIGESAPOL_procedimientos.sql` reemplazó (no intersectó) el
+  filtro de calendario por un `EXISTS` contra la ventana `[ingreso, alta]`
+  de la estancia específica (`temp_emergencia_sigesapol_estancia` /
+  `temp_hospitalizacion_sigesapol_estancia`) en las ramas emergencia (tipo
+  2) y hospitalización (tipo 3/6/8); consulta (tipo 1/5/7) sin cambios.
+  Verificado en julio 2025, solo lectura antes de aplicar y con datos reales
+  después:
+  - **(a) Contaminación eliminada**: el paciente de ejemplo con estancia
+    contaminante (ingreso 07-02, alta en agosto) tenía 14 filas indebidas en
+    julio antes del fix; **0 después**.
+  - **(b) Arrastre legítimo preservado (verificación en sentido inverso,
+    pedida explícitamente antes de adoptar)**: 3 pacientes con estancia
+    ingreso en junio / alta en julio — sus procedimientos de junio, que el
+    filtro de calendario viejo habría excluido, **SÍ aparecen** en julio
+    tras el fix (17/17, 5/12 y 7/17 filas de junio por paciente,
+    respectivamente). Esto confirma que el fix no es solo "más estricto"
+    sino que corrige el filtro en ambas direcciones.
+  - **(c) Diff de julio completo (pipeline 1-11 re-corrido con PARCHE D+E)**:
+    consulta 222,089→222,089 (sin cambio, correcto), emergencia
+    24,983→**25,030** (+47), hospitalización 73,858→**76,551** (+2,693),
+    farmacia 85,507→85,507 (sin cambio, correcto). Deduplicación:
+    2,669→2,683 duplicados ciertos (+14), S/. 151,512.29→S/. 151,892.24
+    monto evitado (+S/. 379.95).
+  - **A1-A8 en PASS** los 8, tras el pipeline completo tal como lo corre el
+    aplicativo (guardián de período activo).
+  - Respaldo `_respaldos/2025-07_pre-PARCHE-E.zip` (ignorado por git,
+    `*.zip`) conservado como evidencia binaria del estado inmediatamente
+    anterior a PARCHE E (con PARCHE D ya aplicado).
+  - El caso (c) de la validación de PARCHE D (muestra de 10 de las -743
+    filas originales) queda cubierto por la evidencia ya reunida en el caso
+    (a) de PARCHE D (5 pacientes con ejemplos concretos línea por línea,
+    todos confirmados como pertenecientes a OTRA estancia ya cerrada) — el
+    número exacto "-743" quedó superado por los cambios de PARCHE E y no se
+    persigue de nuevo.
+  - Espejo `consola/4_06_FASE2_SIGESAPOL_procedimientos.sql` regenerado
+    (copia exacta, diff 0).
 
 ---
 

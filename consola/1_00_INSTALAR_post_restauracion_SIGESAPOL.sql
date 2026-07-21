@@ -5,6 +5,7 @@
 -- Creado para la ejecucion autocontenida en la edicion consola.
 -- El prefijo indica el ORDEN ESTRICTO de ejecucion.
 -- ==============================================================================
+
 -- ============================================================================
 -- 00_INSTALAR_post_restauracion_SIGESAPOL.sql
 -- Deja un backup recién restaurado de la BD SIGESAPOL (sigesapol_junio)
@@ -115,4 +116,3 @@ BEGIN
 
 	RAISE NOTICE '=== FIN VERIFICACION ===';
 END $$;
-

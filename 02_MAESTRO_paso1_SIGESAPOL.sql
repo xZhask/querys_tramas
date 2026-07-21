@@ -18,8 +18,8 @@
 -- ========================= CONFIGURAR PERÍODO AQUÍ =========================
 DROP TABLE IF EXISTS cfg_periodo;
 CREATE TABLE cfg_periodo AS
-SELECT DATE '2025-09-01' AS p_ini,   -- <== inicio del periodo
-       DATE '2025-09-30' AS p_fin;   -- <== fin del período
+SELECT DATE '2025-08-01' AS p_ini,   -- <== inicio del periodo
+       DATE '2025-08-31' AS p_fin;   -- <== fin del período
 -- ============================================================================
 
 

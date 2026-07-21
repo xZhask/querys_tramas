@@ -5,6 +5,7 @@
 -- Creado para la ejecucion autocontenida en la edicion consola.
 -- El prefijo indica el ORDEN ESTRICTO de ejecucion.
 -- ==============================================================================
+
 -- ============================================================================
 -- 02_MAESTRO_paso1_SIGESAPOL.sql
 -- PASO 1 del armado mensual: estancias de emergencia desde SIGESAPOL.
@@ -25,8 +26,8 @@
 -- ========================= CONFIGURAR PERÍODO AQUÍ =========================
 DROP TABLE IF EXISTS cfg_periodo;
 CREATE TABLE cfg_periodo AS
-SELECT DATE '2025-07-01' AS p_ini,   -- <== inicio del periodo
-       DATE '2025-07-31' AS p_fin;   -- <== fin del período
+SELECT DATE '2025-08-01' AS p_ini,   -- <== inicio del periodo
+       DATE '2025-08-31' AS p_fin;   -- <== fin del período
 -- ============================================================================
 
 
@@ -232,4 +233,10 @@ FROM temp_emergencia_sigesapol_estancia;
 -- Alternativa permanente: configurar postgres_fdw para que CPT lea la tabla
 -- de SIGESAPOL directamente. Consultar cómo lo hace hoy el equipo LNS.
 -- ============================================================================
-
+-- ============================================================================
+-- 0. GUARDIÁN DEL PERIODO (SELLO PARA TRANSFERENCIA)
+-- ============================================================================
+DROP TABLE IF EXISTS temp_sigesapol_cfg_periodo;
+CREATE TABLE temp_sigesapol_cfg_periodo AS
+SELECT p_ini, p_fin FROM cfg_periodo;
+-- ============================================================================

@@ -5,6 +5,7 @@
 -- Creado para la ejecucion autocontenida en la edicion consola.
 -- El prefijo indica el ORDEN ESTRICTO de ejecucion.
 -- ==============================================================================
+
 -- ============================================================================
 -- 05_FASE2_paso1b_SIGESAPOL_hospitalizacion.sql
 -- Estancias HOSPITALARIAS desde SIGESAPOL ("query 10-bis").
@@ -212,4 +213,3 @@ FROM temp_hospitalizacion_sigesapol_estancia;
 
 -- NOTA: esta tabla también debe trasladarse a la BD CPT (mismo procedimiento
 -- pg_dump que el padrón de emergencia) para el armado y la deduplicación.
-

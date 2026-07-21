@@ -5,6 +5,7 @@
 -- Creado para la ejecucion autocontenida en la edicion consola.
 -- El prefijo indica el ORDEN ESTRICTO de ejecucion.
 -- ==============================================================================
+
 -- ============================================================================
 -- 04_CONTROL_integridad.sql
 -- Controles de calidad ANTES de exportar las tramas a Excel.
@@ -489,5 +490,4 @@ SELECT 'temp_laboratorio_hospitalizacion_local', codigo_ipress, COUNT(*)
 FROM temp_laboratorio_hospitalizacion_local
 WHERE codigo_ipress NOT IN (SELECT codigo_ipress FROM cfg_ipress_alcance)
 GROUP BY codigo_ipress;
-
 

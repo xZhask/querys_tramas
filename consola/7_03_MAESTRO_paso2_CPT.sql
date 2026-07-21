@@ -5,6 +5,7 @@
 -- Creado para la ejecucion autocontenida en la edicion consola.
 -- El prefijo indica el ORDEN ESTRICTO de ejecucion.
 -- ==============================================================================
+
 -- ============================================================================
 -- 03_MAESTRO_paso2_CPT.sql
 -- PASO 2 del armado mensual: materialización de todas las tablas temp_* en CPT.
@@ -38,8 +39,8 @@
 -- ========================= CONFIGURAR PERÍODO AQUÍ =========================
 DROP TABLE IF EXISTS cfg_periodo;
 CREATE TABLE cfg_periodo AS
-SELECT DATE '2025-07-01' AS p_ini,   -- <== inicio del periodo
-       DATE '2025-07-31' AS p_fin;   -- <== fin del período   (igual al paso 1)
+SELECT DATE '2025-08-01' AS p_ini,   -- <== inicio del periodo
+       DATE '2025-08-31' AS p_fin;   -- <== fin del período   (igual al paso 1)
 -- ============================================================================
 
 
@@ -57,7 +58,6 @@ END $$;
 
 -- ============================================================
 -- 1. ESTANCIAS (padrones) - deben crearse ANTES que el resto
--- ============================================================
 
 -- 1.1 Hospitalización CPT (estancias con dx 1-3)
 DROP TABLE IF EXISTS temp_hospitalizacion_local;
@@ -262,4 +262,3 @@ ORDER BY tabla;
 
 -- Después de este paso: correr 04_CONTROL_integridad.sql, y si pasa,
 -- las queries de armado 06 / 07 / 08 (+ 11 farmacia en SIGESAPOL).
-

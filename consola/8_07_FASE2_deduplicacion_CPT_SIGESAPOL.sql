@@ -5,6 +5,7 @@
 -- Creado para la ejecucion autocontenida en la edicion consola.
 -- El prefijo indica el ORDEN ESTRICTO de ejecucion.
 -- ==============================================================================
+
 -- ============================================================================
 -- 07_FASE2_deduplicacion_CPT_SIGESAPOL.sql  (VERSIÓN FINAL post-piloto julio 2025)
 -- Deduplicación y consolidación entre fuentes (todo julio-diciembre 2025).
@@ -241,4 +242,3 @@ UNION ALL SELECT 'Hosp: complemento CPT (oct-dic)', COUNT(*) FROM temp_hosp_comp
 -- entre fuentes (verificado en piloto). Los ~267 médicos con documento de
 -- 9 caracteres en SIGESAPOL (CE) no cruzarán con CPT por diseño de la
 -- normalización; su volumen es marginal y quedan del lado canónico.
-

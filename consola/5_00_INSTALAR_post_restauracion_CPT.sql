@@ -5,6 +5,7 @@
 -- Creado para la ejecucion autocontenida en la edicion consola.
 -- El prefijo indica el ORDEN ESTRICTO de ejecucion.
 -- ==============================================================================
+
 -- ============================================================================
 -- 00_INSTALAR_post_restauracion_CPT.sql
 -- Deja un backup recién restaurado de la BD CPT (db_cpt_junio26) operativo en
@@ -411,4 +412,3 @@ BEGIN
 
 	RAISE NOTICE '=== FIN VERIFICACION ===';
 END $$;
-

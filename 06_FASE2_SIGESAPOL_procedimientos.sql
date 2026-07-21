@@ -139,9 +139,39 @@ FROM prestaciones pre
 
 WHERE pre.id_tipo_atencion IN (1, 5, 7, 2, 3, 6, 8)
   AND p2.tipo_procedimiento IN (1, 2, 3)  -- médicos, laboratorio, imágenes
-  -- Rango puro, sin cast, para aprovechar el índice de fecha_atencion:
-  AND pre.fecha_atencion >= (SELECT p_ini FROM cfg_periodo)
-  AND pre.fecha_atencion <  (SELECT p_fin FROM cfg_periodo) + INTERVAL '1 day'
+  -- PARCHE E (v3.4, ver HALLAZGO_SIGESAPOL_ventana_estancia.md): regla
+  -- inmutable §1.11 — una estancia (emergencia/hospitalización) factura
+  -- SOLO en el período de SU alta, arrastrando TODOS sus procedimientos
+  -- desde el ingreso real aunque sean de meses anteriores. Para CONSULTA
+  -- (sin noción de estancia) se mantiene el filtro de calendario puro. Para
+  -- EMERGENCIA/HOSPITALIZACION el filtro de calendario se REEMPLAZA (no se
+  -- intersecta) por la pertenencia a la ventana [ingreso, alta] de la
+  -- estancia específica del paciente — intersectarlo perdería silenciosamente
+  -- los procedimientos de meses previos de una estancia que cierra en este
+  -- período (subfacturación, el error inverso al que se corrige). Las
+  -- tablas temp_emergencia_sigesapol_estancia/temp_hospitalizacion_sigesapol_estancia
+  -- ya solo contienen estancias con alta DENTRO del período (ver 02/05_FASE2),
+  -- así que la acotación de período queda garantizada por ellas, no por un
+  -- filtro de calendario adicional aquí. Incluye ambos lados sin normalizar
+  -- documento (a.nro_doc_ident) porque las tablas temp_*_estancia se
+  -- construyen con ese mismo campo, sin transformación, en esta misma BD.
+  AND CASE
+        WHEN pre.id_tipo_atencion IN (1, 5, 7) THEN
+          pre.fecha_atencion >= (SELECT p_ini FROM cfg_periodo)
+          AND pre.fecha_atencion <  (SELECT p_fin FROM cfg_periodo) + INTERVAL '1 day'
+        WHEN pre.id_tipo_atencion = 2 THEN
+          EXISTS (
+            SELECT 1 FROM temp_emergencia_sigesapol_estancia et
+            WHERE et.sp_numero_documento_paciente = a.nro_doc_ident
+              AND pre.fecha_atencion::date BETWEEN et.sp_fecha_atencion::date AND et.sp_fecha_alta_emergencia::date
+          )
+        WHEN pre.id_tipo_atencion IN (3, 6, 8) THEN
+          EXISTS (
+            SELECT 1 FROM temp_hospitalizacion_sigesapol_estancia ht
+            WHERE ht.sp_numero_documento_paciente = a.nro_doc_ident
+              AND pre.fecha_atencion::date BETWEEN ht.sp_fecha_atencion::date AND ht.sp_fecha_alta::date
+          )
+      END
   -- ALCANCE: por sede de la PRESTACIÓN (pre.id_establecimiento), NO solo por
   -- la historia del paciente (el join de arriba es para el nro. de historia,
   -- no filtra alcance) — ver CONTEXTO_CANONICO.md §1 y §3.

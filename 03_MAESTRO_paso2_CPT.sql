@@ -31,9 +31,25 @@
 -- ========================= CONFIGURAR PERÍODO AQUÍ =========================
 DROP TABLE IF EXISTS cfg_periodo;
 CREATE TABLE cfg_periodo AS
-SELECT DATE '2025-09-01' AS p_ini,   -- <== inicio del periodo
-       DATE '2025-09-30' AS p_fin;   -- <== fin del período   (igual al paso 1)
+SELECT DATE '2025-08-01' AS p_ini,   -- <== inicio del periodo
+       DATE '2025-08-31' AS p_fin;   -- <== fin del período   (igual al paso 1)
+-- ============================================================================
+
+
 -- ============================================================
+-- 0. VALIDACIÓN PREVIA: el padrón SIGESAPOL debe existir aquí
+-- ============================================================
+DO $$
+BEGIN
+	IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+	               WHERE table_name = 'temp_emergencia_sigesapol_estancia') THEN
+		RAISE EXCEPTION 'Falta temp_emergencia_sigesapol_estancia. Corre el paso 1 en SIGESAPOL y trasládala a esta BD (ver instrucciones al final del paso 1).';
+	END IF;
+END $$;
+
+
+-- ============================================================
+-- 1. ESTANCIAS (padrones) - deben crearse ANTES que el resto
 
 -- 1.1 Hospitalización CPT (estancias con dx 1-3)
 DROP TABLE IF EXISTS temp_hospitalizacion_local;
