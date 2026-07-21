@@ -19,9 +19,7 @@
         <a href="/aplicativo/public/index.php?vista=bitacora" class="<?= ($vistaActiva ?? '') === 'bitacora' ? 'activo' : '' ?>">Bitácora</a>
     </nav>
     <div class="cabecera-usuario">
-        <?php $u = usuarioActual(); ?>
-        <span><?= htmlspecialchars($u['nombre'] ?: $u['usuario']) ?></span>
-        <a href="/aplicativo/public/logout.php">Salir</a>
+        <span><?= htmlspecialchars(usuarioLocal()) ?></span>
     </div>
 </header>
 <main class="contenido">

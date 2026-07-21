@@ -17,6 +17,11 @@ class GenerarController
         $enCurso = $repo->hayEnCurso();
         $ultimaCualquiera = $repo->listar($periodo, 'generacion', 1)[0] ?? null;
 
+        $basesCpt = DatabaseService::listarBases('db_cpt');
+        $basesSigesapol = DatabaseService::listarBases('sigesapol');
+        if (empty($basesCpt)) $basesCpt = [DB_NAME_CPT];
+        if (empty($basesSigesapol)) $basesSigesapol = [DB_NAME_SIGESAPOL];
+
         renderizar('generar', [
             'titulo' => 'Generar tramas',
             'vistaActiva' => 'generar',
@@ -26,6 +31,8 @@ class GenerarController
             'ultimaCualquiera' => $ultimaCualquiera,
             'enCurso' => $enCurso,
             'metricas' => $ultimaCompletada ? ArchivoService::metricas($periodo) : null,
+            'basesCpt' => $basesCpt,
+            'basesSigesapol' => $basesSigesapol,
         ]);
     }
 }

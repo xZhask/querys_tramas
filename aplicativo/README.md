@@ -37,16 +37,12 @@ detalle de las reglas que este aplicativo orquesta.
    `LNS_PYTHON_BIN` (ruta al intérprete de Python usado para los 3 scripts del
    pipeline) antes de arrancar Apache.
 
-5. **Instalar las tablas del aplicativo y entrar.** Corra
+5. **Instalar la tabla del aplicativo y entrar.** Corra
    `install/00_INSTALAR_APP.sql` contra la BD CPT (psql o pgAdmin), luego
-   abra `http://localhost/aplicativo/public/` e ingrese con:
-   - usuario: `admin`
-   - contraseña: `CambiarAhora2025`
-
-   Cámbiela cuanto antes con, por ejemplo (desde `psql` en la BD CPT):
-   ```sql
-   UPDATE app_usuarios SET password_hash = '<hash generado con password_hash() de PHP>' WHERE usuario = 'admin';
-   ```
+   abra `http://localhost/aplicativo/public/`. No hay login: el aplicativo se
+   corre localmente, una instalación por persona, y la bitácora
+   (`app_ejecuciones.iniciado_por`) identifica cada ejecución con el usuario
+   de Windows de quien la corrió.
 
 ## Qué hace y qué NO hace
 

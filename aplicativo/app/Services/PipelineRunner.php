@@ -372,7 +372,7 @@ class PipelineRunner
                 return [
                     'ok' => $ok,
                     'mensaje' => $ok
-                        ? 'Verificación de aserciones completada: A1/A2/A3/A4 en PASS.'
+                        ? 'Verificación de aserciones completada: A1/A2/A3/A4/A5 en PASS.'
                         : $this->mensajeAmigable($paso),
                     'conteo' => null,
                     'detalle_tecnico' => $detalleProceso,

@@ -4,8 +4,6 @@ declare(strict_types=1);
 error_reporting(E_ALL);
 ini_set('display_errors', '0'); // nunca mostrar errores crudos de PHP al usuario
 
-session_start();
-
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 
@@ -21,17 +19,14 @@ function pipelineConfig(): array
     return require __DIR__ . '/../config/pipeline.php';
 }
 
-function usuarioActual(): ?array
+/**
+ * Identifica al usuario del SO para la bitácora (app_ejecuciones.iniciado_por).
+ * La app se corre localmente por cada persona, sin login: no hay sesión que
+ * distinga usuarios, así que se usa el nombre de la cuenta de Windows.
+ */
+function usuarioLocal(): string
 {
-    return $_SESSION['usuario'] ?? null;
-}
-
-function requerirLogin(): void
-{
-    if (usuarioActual() === null) {
-        header('Location: /aplicativo/public/login.php');
-        exit;
-    }
+    return (string) ($_SERVER['USERNAME'] ?? $_SERVER['USER'] ?? get_current_user() ?: 'local');
 }
 
 function jsonSalida(array $datos, int $codigoHttp = 200): void
@@ -65,7 +60,7 @@ function parsearAserciones(string $salida): array
 {
     $aserciones = [];
     foreach (explode("\n", $salida) as $linea) {
-        if (preg_match('/^(A1|A2|A3-ciclo|A3-CONTROL10|A4)\s*\[[^\]]+\]:\s*(PASS|FALLO|SKIPPED)(.*)$/', trim($linea), $m)) {
+        if (preg_match('/^(A1|A2|A3-ciclo|A3-CONTROL10|A4|A5|A6)\s*\[[^\]]+\]:\s*(PASS|FALLO|SKIPPED)(.*)$/', trim($linea), $m)) {
             $aserciones[] = ['nombre' => $m[1], 'estado' => $m[2], 'detalle' => trim($m[3], " -")];
         }
     }

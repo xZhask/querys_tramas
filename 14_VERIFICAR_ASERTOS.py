@@ -230,6 +230,130 @@ def check_a4(infos_dir, tramas_dir, period, alcance=("00013591",)):
     return ok
 
 
+def check_a5(infos_dir, tramas_dir, period, year, month):
+    cols_path = os.path.join(infos_dir, ".trama_columns.json")
+    if not os.path.exists(cols_path):
+        print(f"A5 [{period}]: FALLO - no existe {cols_path}")
+        return False
+    with open(cols_path, "r", encoding="utf-8") as f:
+        trama_cols = json.load(f)
+
+    import calendar
+    import datetime
+    last_day = calendar.monthrange(year, month)[1]
+    p_ini = datetime.date(year, month, 1)
+    p_fin = datetime.date(year, month, last_day)
+
+    def is_in_period(date_str):
+        if not date_str:
+            return False
+        if " " in date_str:
+            date_str = date_str.split(" ")[0]
+        try:
+            d = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+            return p_ini <= d <= p_fin
+        except ValueError:
+            pass
+        return False
+
+    archivos = {
+        "consulta": ("trama_consulta_externa.txt", ["sp_fecha_atencion"]),
+        "emergencia": ("trama_emergencia.txt", ["sp_fecha_alta"]),
+        "farmacia": ("trama_farmacia.txt", ["fecha_dispensacion_como_atencion", "fecha_dispensacion"]),
+    }
+    
+    ok = True
+    for tipo, (fname, col_names) in archivos.items():
+        cols = trama_cols.get(tipo, [])
+        col_name = next((cn for cn in col_names if cn in cols), None)
+        
+        if col_name:
+            valores = load_trama_values(os.path.join(tramas_dir, fname), cols, col_name)
+            if valores is not None:
+                fuera = [v for v in valores if not is_in_period(v)]
+                if fuera:
+                    print(f"A5 [{period}]: FALLO - {fname} tiene fechas fuera de la ventana ({len(fuera)} distintos, ej: {fuera[:3]})")
+                    ok = False
+
+    # Hospitalizacion: sp_fecha_atencion <= p_fin AND (sp_fecha_alta IS NULL OR sp_fecha_alta >= p_ini)
+    h_cols = trama_cols.get("hospitalizacion", [])
+    if "sp_fecha_atencion" in h_cols and "sp_fecha_alta" in h_cols:
+        idx_atencion = h_cols.index("sp_fecha_atencion")
+        idx_alta = h_cols.index("sp_fecha_alta")
+        h_path = os.path.join(tramas_dir, "trama_hospitalizacion.txt")
+        if os.path.exists(h_path):
+            with open(h_path, "rb") as f:
+                data = f.read().decode("utf-8")
+            sep = "|\r\n" if "|\r\n" in data else "|\n"
+            fuera_h = 0
+            for rec in data.split(sep):
+                if not rec.strip(): continue
+                parts = rec.split("|")
+                if len(parts) > max(idx_atencion, idx_alta):
+                    at_str = parts[idx_atencion].strip()
+                    al_str = parts[idx_alta].strip()
+                    if " " in at_str: at_str = at_str.split(" ")[0]
+                    if " " in al_str: al_str = al_str.split(" ")[0]
+                    
+                    try:
+                        at_d = datetime.datetime.strptime(at_str, "%Y-%m-%d").date() if at_str else p_ini
+                        al_d = datetime.datetime.strptime(al_str, "%Y-%m-%d").date() if al_str else p_fin
+                        
+                        if not (at_d <= p_fin and al_d >= p_ini):
+                            fuera_h += 1
+                    except ValueError:
+                        pass
+            if fuera_h > 0:
+                print(f"A5 [{period}]: FALLO - trama_hospitalizacion.txt tiene {fuera_h} registros fuera de la ventana de estancia")
+                ok = False
+                
+    if ok:
+        print(f"A5 [{period}]: PASS (Ventana temporal estricta validada en las 4 tramas)")
+    return ok
+
+
+def check_a6(infos_dir, tramas_dir, period, allow_missing=False):
+    path = os.path.join(infos_dir, "metricas.json")
+    if not os.path.exists(path):
+        print(f"A6 [{period}]: FALLO - no existe {path}")
+        return False
+    with open(path, "r", encoding="utf-8") as f:
+        metrics = json.load(f)
+    volumenes_tramas = metrics.get("volumenes_tramas")
+    if not volumenes_tramas:
+        print(f"A6 [{period}]: FALLO - metricas.json no tiene 'volumenes_tramas'")
+        return False
+        
+    archivos = {
+        "trama_consulta_externa": "trama_consulta_externa.txt",
+        "trama_emergencia": "trama_emergencia.txt",
+        "trama_hospitalizacion": "trama_hospitalizacion.txt",
+        "trama_farmacia": "trama_farmacia.txt",
+    }
+    
+    ok = True
+    for key, fname in archivos.items():
+        expected = volumenes_tramas.get(key, 0)
+        p = os.path.join(tramas_dir, fname)
+        if not os.path.exists(p):
+            if expected > 0:
+                print(f"A6 [{period}]: FALLO - no existe {fname} pero se esperaban {expected} filas")
+                ok = False
+            continue
+        with open(p, "rb") as f:
+            data = f.read()
+        records = split_records(data)
+        actual = len(records)
+        if actual != expected:
+            print(f"A6 [{period}]: FALLO - {fname} tiene {actual} lineas fisicas, pero metricas.json reporta {expected}")
+            ok = False
+            
+    if ok:
+        print(f"A6 [{period}]: PASS (Recuento fisico de lineas en txt coincide con metricas.json)")
+    return ok
+
+
+
 def blank_decisions(audit_path):
     """Vacia la columna DECISION_AUDITORIA (T, col 20) en las 4 hojas de decision.
     Un libro 'vacio (todo pendiente)' significa celdas en blanco: el propio
@@ -346,13 +470,15 @@ def main():
     infos_dir = os.path.join(exp_dir, "03_INFORMATIVOS")
     audit_path = os.path.join(exp_dir, f"02_AUDITORIA_{period}.xlsx")
 
-    print(f"=== Verificando aserciones A1/A2/A3/A4 para {period} ===")
+    print(f"=== Verificando aserciones A1/A2/A3/A4/A5/A6 para {period} ===")
     results = [
         check_a1(infos_dir, period, allow_missing=args.allow_missing_conservacion),
         check_a2(exp_dir, infos_dir, tramas_dir, period),
         check_a3_ciclo(exp_dir, tramas_dir, audit_path, year, month, period),
         check_a3_control10(year, month, period, args.skip_control10),
         check_a4(infos_dir, tramas_dir, period),
+        check_a5(infos_dir, tramas_dir, period, year, month),
+        check_a6(infos_dir, tramas_dir, period, allow_missing=args.allow_missing_conservacion),
     ]
 
     if all(results):

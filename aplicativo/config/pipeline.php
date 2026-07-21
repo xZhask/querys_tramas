@@ -69,6 +69,7 @@ return [
             'temp_emergencia_sigesapol_estancia',
             'temp_hospitalizacion_sigesapol_estancia',
             'temp_sigesapol_procedimientos',
+            'temp_sigesapol_cfg_periodo',
         ],
         'validacion' => ['tipo' => 'sin_error'],
     ],

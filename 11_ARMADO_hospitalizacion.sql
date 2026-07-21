@@ -62,6 +62,7 @@ e.id_prestacion_cpt::text as id_prestacion_cpt,
 ''::text as id_prestacion_laboratorio
 
 FROM temp_hospitalizacion_local e  -- 981
+WHERE e.sp_fecha_atencion::date <= (SELECT p_fin FROM cfg_periodo) AND COALESCE(e.sp_fecha_alta::date, '9999-12-31'::date) >= (SELECT p_ini FROM cfg_periodo)
 ORDER BY e.sp_fecha_atencion, e.sp_apellido_paterno_paciente, e.sp_apellido_materno_paciente, e.sp_nombres_paciente
 )
 
@@ -126,7 +127,8 @@ FROM temp_hospitalizacion_local e -- 66,569
 	ON bdt.tipo_documento_paciente = e.sp_tipo_documento_paciente
 	AND bdt.numero_documento_paciente = e.sp_numero_documento_paciente
 	AND bdt.fecha_atencion between e.sp_fecha_atencion AND e.sp_fecha_alta
-	WHERE bdt.codigo_procedimiento is not null
+	WHERE e.sp_fecha_atencion::date <= (SELECT p_fin FROM cfg_periodo) AND COALESCE(e.sp_fecha_alta::date, '9999-12-31'::date) >= (SELECT p_ini FROM cfg_periodo)
+	AND bdt.codigo_procedimiento is not null
 	AND bdt.codigo_procedimiento not in ('99231', '99231.15', '99262', '99295')
 	
 ORDER BY sp_fecha_atencion, e.sp_apellido_paterno_paciente, e.sp_apellido_materno_paciente, e.sp_nombres_paciente, sp_suma_cantidad desc -- 67,674 -- 16-06-2023 -- 67706
@@ -194,7 +196,8 @@ laboratorio.id_prestacion_laboratorio::text as id_prestacion_laboratorio
 		AND laboratorio.numero_documento_paciente = e.sp_numero_documento_paciente
 		AND laboratorio.fecha_atencion between e.sp_fecha_atencion AND e.sp_fecha_alta
 
-	WHERE laboratorio.codigo_procedimiento is not null
+	WHERE e.sp_fecha_atencion::date <= (SELECT p_fin FROM cfg_periodo) AND COALESCE(e.sp_fecha_alta::date, '9999-12-31'::date) >= (SELECT p_ini FROM cfg_periodo)
+	AND laboratorio.codigo_procedimiento is not null
 	
 	  ORDER BY sp_fecha_atencion, e.sp_apellido_paterno_paciente, e.sp_apellido_materno_paciente, e.sp_nombres_paciente, sp_suma_cantidad desc
 )
@@ -254,7 +257,8 @@ FROM temp_hospitalizacion_local e
 	ON bdt.tipo_documento_paciente::character varying = e.sp_tipo_documento_paciente::character varying
 	AND bdt.numero_documento_paciente = e.sp_numero_documento_paciente
 	AND bdt.fecha_atencion::date between e.sp_fecha_atencion::date AND e.sp_fecha_alta::date
-	WHERE bdt.codigo_procedimiento is not null
+	WHERE e.sp_fecha_atencion::date <= (SELECT p_fin FROM cfg_periodo) AND COALESCE(e.sp_fecha_alta::date, '9999-12-31'::date) >= (SELECT p_ini FROM cfg_periodo)
+	AND bdt.codigo_procedimiento is not null
 	AND e.origen_reclasificacion IS NOT NULL
 )
 
@@ -313,6 +317,7 @@ laboratorio.id_prestacion_laboratorio::text as id_prestacion_laboratorio
 		AND laboratorio.numero_documento_paciente = e.sp_numero_documento_paciente
 		AND laboratorio.fecha_atencion::date between e.sp_fecha_atencion::date AND e.sp_fecha_alta::date
 
-	WHERE laboratorio.codigo_procedimiento is not null
+	WHERE e.sp_fecha_atencion::date <= (SELECT p_fin FROM cfg_periodo) AND COALESCE(e.sp_fecha_alta::date, '9999-12-31'::date) >= (SELECT p_ini FROM cfg_periodo)
+	AND laboratorio.codigo_procedimiento is not null
 	AND e.origen_reclasificacion IS NOT NULL
 )

@@ -175,7 +175,11 @@ def main():
     # Farmacia query must run on sigesapol_junio database
     import os
     password_sig = os.environ.get("PGPASSWORD", "root")
-    conn_sig = psycopg2.connect(f"dbname=sigesapol_junio user=postgres password={password_sig} host=localhost")
+    import os
+    dbname_sig = os.environ.get("LNS_DB_SIGESAPOL")
+    if not dbname_sig:
+        dbname_sig = os.environ.get("PGDATABASE_SIGESAPOL", "sigesapol_junio")
+    conn_sig = psycopg2.connect(f"dbname={dbname_sig} user=postgres password={password_sig} host=localhost")
     cur_sig = conn_sig.cursor()
     farmacia_raw = execute_sql_file(cur_sig, "12_SIGESAPOL_farmacia.sql")
     cur_sig.close()

@@ -2,7 +2,6 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../app/bootstrap.php';
-requerirLogin();
 
 $periodo = $_GET['periodo'] ?? null;
 if ($periodo !== null && !ArchivoService::periodoValido($periodo)) {

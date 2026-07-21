@@ -15,11 +15,11 @@ class EjecucionRepository
         $this->pdo = $pdo;
     }
 
-    public function crear(string $periodo, string $tipo, string $iniciadoPor, int $pasoInicial = 0): int
+    public function crear(string $periodo, string $tipo, string $iniciadoPor, int $pasoInicial = 0, ?string $dbCpt = null, ?string $dbSig = null): int
     {
         $stmt = $this->pdo->prepare(
-            "INSERT INTO app_ejecuciones (periodo, tipo, paso_actual, estado, iniciado_por, log)
-             VALUES (:periodo, :tipo, :paso, 'en_curso', :usuario, '[]'::jsonb)
+            "INSERT INTO app_ejecuciones (periodo, tipo, paso_actual, estado, iniciado_por, log, db_cpt, db_sigesapol)
+             VALUES (:periodo, :tipo, :paso, 'en_curso', :usuario, '[]'::jsonb, :db_cpt, :db_sig)
              RETURNING id"
         );
         $stmt->execute([
@@ -27,6 +27,8 @@ class EjecucionRepository
             'tipo' => $tipo,
             'paso' => $pasoInicial,
             'usuario' => $iniciadoPor,
+            'db_cpt' => $dbCpt,
+            'db_sig' => $dbSig,
         ]);
         return (int) $stmt->fetchColumn();
     }

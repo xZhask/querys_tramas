@@ -26,7 +26,8 @@
     function initGenerar() {
         const listaPasos = document.getElementById('lista-pasos');
         const botonGenerar = document.getElementById('boton-generar');
-        const botonReiniciar = document.getElementById('boton-reiniciar');
+        const botonReiniciarPaso5 = document.getElementById('boton-reiniciar-paso5');
+        const botonReiniciarCompleto = document.getElementById('boton-reiniciar-completo');
         if (!listaPasos || !botonGenerar) return;
 
         function itemPaso(numero) {
@@ -48,11 +49,16 @@
 
         function iniciar(forzarDesdePaso) {
             botonGenerar.disabled = true;
-            if (botonReiniciar) botonReiniciar.disabled = true;
+            if (botonReiniciarPaso5) botonReiniciarPaso5.disabled = true;
+            if (botonReiniciarCompleto) botonReiniciarCompleto.disabled = true;
             resetPasos();
 
             const cuerpo = { accion: 'iniciar', periodo: estado.periodo };
             if (forzarDesdePaso) cuerpo.forzar_desde_paso = forzarDesdePaso;
+            const selCpt = document.getElementById('select-cpt');
+            if (selCpt) cuerpo.db_cpt = selCpt.value;
+            const selSig = document.getElementById('select-sigesapol');
+            if (selSig) cuerpo.db_sigesapol = selSig.value;
 
             fetch('/aplicativo/public/ejecutar_paso.php', {
                 method: 'POST',
@@ -62,18 +68,17 @@
                 .then(porJson)
                 .then((r) => {
                     if (!r.ok && r.requiere_confirmacion) {
-                        if (confirm(r.mensaje + '\n\n¿Confirma reiniciar desde el paso 5?')) {
-                            iniciar(5);
-                        } else {
-                            botonGenerar.disabled = false;
-                            if (botonReiniciar) botonReiniciar.disabled = false;
-                        }
+                        alert(r.mensaje);
+                        botonGenerar.disabled = false;
+                        if (botonReiniciarPaso5) botonReiniciarPaso5.disabled = false;
+                        if (botonReiniciarCompleto) botonReiniciarCompleto.disabled = false;
                         return;
                     }
                     if (!r.ok) {
                         alert(r.mensaje);
                         botonGenerar.disabled = false;
-                        if (botonReiniciar) botonReiniciar.disabled = false;
+                        if (botonReiniciarPaso5) botonReiniciarPaso5.disabled = false;
+                        if (botonReiniciarCompleto) botonReiniciarCompleto.disabled = false;
                         return;
                     }
                     correrPaso(r.ejecucion_id, r.primer_paso);
@@ -88,10 +93,16 @@
             const li = itemPaso(numeroPaso);
             if (li) pintarSemaforo(li, 'en-curso');
 
+            const selCpt = document.getElementById('select-cpt');
+            const selSig = document.getElementById('select-sigesapol');
+            const cuerpo = { accion: 'correr_paso', ejecucion_id: ejecucionId, paso: numeroPaso };
+            if (selCpt) cuerpo.db_cpt = selCpt.value;
+            if (selSig) cuerpo.db_sigesapol = selSig.value;
+
             fetch('/aplicativo/public/ejecutar_paso.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ accion: 'correr_paso', ejecucion_id: ejecucionId, paso: numeroPaso }),
+                body: JSON.stringify(cuerpo),
             })
                 .then(porJson)
                 .then((r) => {
@@ -129,13 +140,15 @@
                                 body: JSON.stringify({ accion: 'cancelar', ejecucion_id: ejecucionId }),
                             }).then(() => {
                                 botonGenerar.disabled = false;
-                                if (botonReiniciar) botonReiniciar.disabled = false;
+                                if (botonReiniciarPaso5) botonReiniciarPaso5.disabled = false;
+                                if (botonReiniciarCompleto) botonReiniciarCompleto.disabled = false;
                             });
                         };
                         acciones.appendChild(btnCancelar);
 
                         botonGenerar.disabled = false;
-                        if (botonReiniciar) botonReiniciar.disabled = false;
+                        if (botonReiniciarPaso5) botonReiniciarPaso5.disabled = false;
+                        if (botonReiniciarCompleto) botonReiniciarCompleto.disabled = false;
                         return;
                     }
 
@@ -145,7 +158,8 @@
 
                     if (r.es_ultimo) {
                         botonGenerar.disabled = false;
-                        if (botonReiniciar) botonReiniciar.disabled = false;
+                        if (botonReiniciarPaso5) botonReiniciarPaso5.disabled = false;
+                        if (botonReiniciarCompleto) botonReiniciarCompleto.disabled = false;
                         if (r.metricas) mostrarResumen(r.metricas);
                     } else {
                         correrPaso(ejecucionId, numeroPaso + 1);
@@ -186,10 +200,17 @@
         }
 
         botonGenerar.addEventListener('click', () => iniciar(null));
-        if (botonReiniciar) {
-            botonReiniciar.addEventListener('click', () => {
+        if (botonReiniciarPaso5) {
+            botonReiniciarPaso5.addEventListener('click', () => {
                 if (confirm('Esto volverá a correr deduplicación, consolidación, reclasificación y generación de tramas para ' + estado.periodo + '. ¿Continuar?')) {
                     iniciar(5);
+                }
+            });
+        }
+        if (botonReiniciarCompleto) {
+            botonReiniciarCompleto.addEventListener('click', () => {
+                if (confirm('Esto volverá a EXTRAER los datos de SIGESAPOL desde cero para ' + estado.periodo + ' y ejecutará TODO el pipeline. ¿Continuar?')) {
+                    iniciar(1);
                 }
             });
         }

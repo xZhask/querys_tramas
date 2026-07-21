@@ -59,7 +59,6 @@ body {
 .cabecera-nav a.activo { background: var(--blanco); color: var(--azul-institucional); font-weight: 600; }
 
 .cabecera-usuario { display: flex; align-items: center; gap: 0.75rem; font-size: 0.85rem; }
-.cabecera-usuario a { color: var(--blanco); }
 
 .contenido { max-width: 980px; margin: 0 auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
 
@@ -166,16 +165,6 @@ th { color: var(--gris-atenuado); font-weight: 600; font-size: 0.8rem; text-tran
 .lista-errores ul { margin: 0.3rem 0 0; padding-left: 1.2rem; }
 
 .pie { text-align: center; color: var(--gris-atenuado); font-size: 0.78rem; padding: 1.5rem; }
-
-.pagina-login { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: var(--azul-institucional); }
-.tarjeta-login { background: var(--blanco); padding: 2rem 2.5rem; border-radius: var(--radio); width: 320px; }
-.tarjeta-login h1 { font-size: 1.15rem; color: var(--azul-oscuro); margin-bottom: 0; }
-.tarjeta-login .subtitulo { color: var(--gris-atenuado); font-size: 0.82rem; margin-top: 0.2rem; }
-.tarjeta-login form { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem; }
-.tarjeta-login label { font-size: 0.82rem; color: var(--gris-atenuado); }
-.tarjeta-login input { padding: 0.5rem 0.6rem; border: 1px solid var(--gris-borde); border-radius: var(--radio); }
-.tarjeta-login button { margin-top: 0.5rem; }
-.mensaje-error { color: var(--rojo); font-size: 0.85rem; }
 
 @media (max-width: 640px) {
     .cabecera { flex-direction: column; align-items: flex-start; }

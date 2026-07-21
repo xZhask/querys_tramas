@@ -1,14 +1,20 @@
 <?php
 declare(strict_types=1);
 
+$cuerpo = json_decode(file_get_contents('php://input'), true) ?? [];
+if (!empty($cuerpo['db_cpt'])) {
+    putenv('LNS_DB_CPT=' . $cuerpo['db_cpt']);
+}
+if (!empty($cuerpo['db_sigesapol'])) {
+    putenv('LNS_DB_SIGESAPOL=' . $cuerpo['db_sigesapol']);
+}
+
 require_once __DIR__ . '/../app/bootstrap.php';
-requerirLogin();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     jsonSalida(['ok' => false, 'mensaje' => 'Método no permitido.'], 405);
 }
 
-$cuerpo = json_decode(file_get_contents('php://input'), true) ?? [];
 $accion = $cuerpo['accion'] ?? '';
 $repo = new EjecucionRepository(getCptPdo());
 
@@ -52,13 +58,12 @@ function manejarIniciar(array $cuerpo, EjecucionRepository $repo): void
         jsonSalida([
             'ok' => false,
             'requiere_confirmacion' => true,
-            'mensaje' => "El período {$periodo} ya tiene pasos de una sola pasada ejecutados (deduplicación/consolidación/reclasificación). Para volver a generarlo debe confirmar \"Reiniciar desde paso 5\".",
+            'mensaje' => "El período {$periodo} ya tiene pasos ejecutados. Por favor, use los botones 'Reiniciar ciclo completo' o 'Reiniciar desde paso 5' que aparecen arriba.",
         ]);
     }
 
     $pasoInicial = ($forzarDesdePaso === 5) ? 4 : 0;
-    $usuario = usuarioActual()['usuario'];
-    $id = $repo->crear($periodo, 'generacion', $usuario, $pasoInicial);
+    $id = $repo->crear($periodo, 'generacion', usuarioLocal(), $pasoInicial, $cuerpo['db_cpt'] ?? null, $cuerpo['db_sigesapol'] ?? null);
 
     jsonSalida(['ok' => true, 'ejecucion_id' => $id, 'primer_paso' => $pasoInicial + 1]);
 }

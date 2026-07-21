@@ -82,7 +82,8 @@
 	''::text as id_prestacion_cpt,
 	''::text as id_prestacion_laboratorio
   FROM temp_emergencia_sigesapol_estancia e
-  WHERE e.excluir_tipo2 = false
+  WHERE e.sp_fecha_alta_emergencia::date BETWEEN (SELECT p_ini FROM cfg_periodo) AND (SELECT p_fin FROM cfg_periodo)
+    AND e.excluir_tipo2 = false
     AND NOT EXISTS (
 	SELECT 1 FROM temp_hospitalizacion_local h
 	WHERE h.sp_numero_documento_paciente = e.sp_numero_documento_paciente
@@ -154,7 +155,8 @@ LEFT JOIN temp_bdt_emergencia_sigesapol bdt
 	ON bdt.tipo_documento_paciente::character varying = e.sp_tipo_documento_paciente::character varying
 	AND bdt.numero_documento_paciente = e.sp_numero_documento_paciente
 	AND bdt.fecha_atencion::date between e.sp_fecha_atencion::date AND e.sp_fecha_alta_emergencia::date
-WHERE codigo_procedimiento is not null
+WHERE e.sp_fecha_alta_emergencia::date BETWEEN (SELECT p_ini FROM cfg_periodo) AND (SELECT p_fin FROM cfg_periodo)
+  AND codigo_procedimiento is not null
   AND e.excluir_tipo2 = false
   AND NOT EXISTS (
 	SELECT 1 FROM temp_hospitalizacion_local h
@@ -234,7 +236,8 @@ LEFT JOIN temp_laboratorio_emergencia_sigesapol laboratorio
 	ON laboratorio.tipo_documento_paciente::character varying = e.sp_tipo_documento_paciente
 	AND laboratorio.numero_documento_paciente = e.sp_numero_documento_paciente
 	AND laboratorio.fecha_atencion::date between e.sp_fecha_atencion::date AND e.sp_fecha_alta_emergencia::date
-WHERE laboratorio.codigo_procedimiento is not null
+WHERE e.sp_fecha_alta_emergencia::date BETWEEN (SELECT p_ini FROM cfg_periodo) AND (SELECT p_fin FROM cfg_periodo)
+  AND laboratorio.codigo_procedimiento is not null
   AND e.excluir_tipo2 = false
   AND NOT EXISTS (
 	SELECT 1 FROM temp_hospitalizacion_local h

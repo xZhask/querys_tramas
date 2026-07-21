@@ -57,6 +57,7 @@ SELECT
 	''::text as id_prestacion_laboratorio
 
 FROM temp_bdt_consulta_local bdt --FROM sp_procedimientos_segun_tipo_atencion('20230501', '20230531', 1) bdt; --15234
+WHERE bdt.fecha_atencion::date BETWEEN (SELECT p_ini FROM cfg_periodo) AND (SELECT p_fin FROM cfg_periodo)
 ORDER BY sp_fecha_atencion desc, sp_suma_cantidad desc
 )
 UNION ALL
@@ -109,6 +110,6 @@ SELECT
 	laboratorio.id_prestacion_laboratorio::text as id_prestacion_laboratorio
 
 FROM temp_laboratorio_consulta_local laboratorio
-
+WHERE laboratorio.fecha_muestra::date BETWEEN (SELECT p_ini FROM cfg_periodo) AND (SELECT p_fin FROM cfg_periodo)
 ORDER BY sp_fecha_atencion desc, sp_suma_cantidad desc
 )

@@ -454,6 +454,15 @@
   seguridad para cualquier hoja de referencia que se suelte fuera de esa
   carpeta en el futuro. Confirmado por `git status` que el archivo queda
   untracked/ignorado. Regla codificada como §1.10.
+- **2026-07-21 — v3.2: Corrección estructural del control de período**: Se
+  resolvió la contaminación de períodos (meses extraídos arrastrando datos de
+  meses anteriores). El UI de la aplicación se actualizó para incluir un ciclo
+  de extracción completa (pasos 1-11) y se reforzó el flujo de extracción en
+  el SQL, insertando y transmitiendo una tabla guardián `temp_sigesapol_cfg_periodo`
+  desde `SIGESAPOL` a `CPT` para abortar la ejecución si las fechas de ambas
+  bases difieren. Las extracciones (pasos 1-4) ya no se evaden por defecto
+  desde la interfaz. Además, se implementó la aserción de cobertura **A6** para
+  validar por conteo físico de líneas que los datos en `trama_*.txt` no se corrompan.
 
 ---
 

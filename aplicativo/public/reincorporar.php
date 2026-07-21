@@ -2,7 +2,6 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../app/bootstrap.php';
-requerirLogin();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     jsonSalida(['ok' => false, 'mensaje' => 'Método no permitido.'], 405);
@@ -34,8 +33,7 @@ if (!$validacion['ok']) {
     jsonSalida(['ok' => false, 'errores' => $validacion['errores']]);
 }
 
-$usuario = usuarioActual()['usuario'];
-$ejecucionId = $repoEjecuciones->crear($periodo, 'reincorporacion', $usuario);
+$ejecucionId = $repoEjecuciones->crear($periodo, 'reincorporacion', usuarioLocal());
 
 try {
     $respaldo = $servicio->reemplazarLibroAuditoria($periodo, $_FILES['archivo']['tmp_name']);

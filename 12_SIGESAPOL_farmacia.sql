@@ -145,6 +145,7 @@ and e.id = (SELECT id_establecimiento_sigesapol FROM cfg_ipress_alcance) -- ALCA
 -- CONSULTA EXTERNA
 and rv.tipo_receta IN ('AMBULATORIO', 'SERVICIO NUTRICIONAL - AMBULATORIO', 'URGENCIA')
 and rv.fecha_expedicion::date between (SELECT p_ini FROM cfg_periodo) and (SELECT p_fin FROM cfg_periodo)
+and rv.fecha_registro::date between (SELECT p_ini FROM cfg_periodo) and (SELECT p_fin FROM cfg_periodo)
 
 -- EMERGENCIA LOCAL Y SIGESAPOL
 --and (rv.tipo_receta = 'EMERGENCIA')
