@@ -21,12 +21,20 @@ detalle de las reglas que este aplicativo orquesta.
    ```
    Reinicie Apache desde Laragon.
 
-3. **Instalar dependencias PHP.** Desde `aplicativo/`:
+3. **Instalar dependencias PHP y Python.** Desde `aplicativo/`:
    ```
    composer install
    ```
    (Ya trae `composer.json`/`composer.lock` con PhpSpreadsheet; este paso solo
-   descarga `vendor/` si no vino incluido.)
+   descarga `vendor/` si no vino incluido.) Desde la raíz del repo, instale
+   además las dependencias de los 3 scripts `.py` del pipeline
+   (`generate_outputs_v2.py`, `14_VERIFICAR_ASERTOS.py`,
+   `13_REINCORPORAR_decisiones.py`):
+   ```
+   python -m pip install -r requirements.txt
+   ```
+   Use el mismo intérprete que apuntará `LNS_PYTHON_BIN` (paso 4) o el
+   `python` del PATH si no la define.
 
 4. **Configurar credenciales (si difieren de los valores por defecto).**
    `config/database.php` usa por defecto usuario `postgres`, password `root`,
@@ -88,6 +96,10 @@ aplicativo/
   completo queda en el detalle plegable de ese paso y en `app_ejecuciones.log`
   (pantalla Bitácora). El `.sql` no se toca por el aplicativo salvo el bloque
   de período en los pasos 1 y 5.
-- **Un paso Python falla:** confirme que `LNS_PYTHON_BIN` apunta a un Python
-  con `openpyxl` y `psycopg2` instalados (los mismos que usa
-  `run_month.ps1`).
+- **Un paso Python falla con `ModuleNotFoundError` (p. ej. `psycopg2`,
+  `openpyxl`):** confirme que `LNS_PYTHON_BIN` apunta a un Python con las
+  dependencias de `requirements.txt` (raíz del repo) instaladas — corra
+  `python -m pip install -r requirements.txt` con ESE mismo intérprete
+  (los mismos paquetes que usa `run_month.ps1`). Tras instalar, use el botón
+  "Reintentar paso" en la pantalla Generar; no hace falta rehacer los pasos
+  previos ya completados.
