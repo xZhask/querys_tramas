@@ -17,6 +17,7 @@ class ResultadosController
             'periodo' => $periodo,
             'periodos' => $periodos,
             'tramas' => $periodo ? ArchivoService::listarTramas($periodo) : [],
+            'analisis' => $periodo ? ArchivoService::listarAnalisis($periodo) : [],
             'auditoriaExiste' => $periodo ? is_file(ArchivoService::rutaAuditoria($periodo)) : false,
             'nombreAuditoria' => $periodo ? ArchivoService::nombreAuditoria($periodo) : null,
             'informativos' => $periodo ? ArchivoService::listarInformativos($periodo) : [],

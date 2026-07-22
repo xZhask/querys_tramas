@@ -15,11 +15,20 @@ def parse_args():
     parser.add_argument("--month", type=int, required=True, help="Month of the period (e.g. 7)")
     return parser.parse_args()
 
+def _pg_connect(lns_db_var, pg_db_var, default_dbname):
+    # LNS_DB_* es lo que setea el aplicativo web (config/database.php) segun
+    # los selectores "Base CPT"/"Base SIGESAPOL" de la pantalla Generar;
+    # PG*/localhost:5432/postgres son el fallback historico de run_month.ps1
+    # para quien corre este script directo por consola.
+    host = os.environ.get("LNS_DB_HOST") or os.environ.get("PGHOST", "localhost")
+    port = os.environ.get("LNS_DB_PORT") or os.environ.get("PGPORT", "5432")
+    user = os.environ.get("LNS_DB_USER") or os.environ.get("PGUSER", "postgres")
+    password = os.environ.get("LNS_DB_PASSWORD") or os.environ.get("PGPASSWORD", "root")
+    dbname = os.environ.get(lns_db_var) or os.environ.get(pg_db_var, default_dbname)
+    return psycopg2.connect(f"dbname={dbname} user={user} password={password} host={host} port={port}")
+
 def connect_db():
-    import os
-    dbname = os.environ.get("PGDATABASE", "db_cpt_junio26")
-    password = os.environ.get("PGPASSWORD", "root")
-    return psycopg2.connect(f"dbname={dbname} user=postgres password={password} host=localhost")
+    return _pg_connect("LNS_DB_CPT", "PGDATABASE", "db_cpt_junio26")
 
 def parse_date(val):
     if val is None:
@@ -187,13 +196,7 @@ def main():
     for idx, r in enumerate(hospitalizacion_raw): r['_row_idx'] = f"H_{idx}"
 
     # Farmacia query must run on sigesapol_junio database
-    import os
-    password_sig = os.environ.get("PGPASSWORD", "root")
-    import os
-    dbname_sig = os.environ.get("LNS_DB_SIGESAPOL")
-    if not dbname_sig:
-        dbname_sig = os.environ.get("PGDATABASE_SIGESAPOL", "sigesapol_junio")
-    conn_sig = psycopg2.connect(f"dbname={dbname_sig} user=postgres password={password_sig} host=localhost")
+    conn_sig = _pg_connect("LNS_DB_SIGESAPOL", "PGDATABASE_SIGESAPOL", "sigesapol_junio")
     cur_sig = conn_sig.cursor()
     farmacia_raw = execute_sql_file(cur_sig, "12_SIGESAPOL_farmacia.sql")
     cur_sig.close()

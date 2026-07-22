@@ -18,6 +18,7 @@ $extension = strtolower(pathinfo($ruta, PATHINFO_EXTENSION));
 $tipoMime = match ($extension) {
     'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'txt', 'log' => 'text/plain; charset=utf-8',
+    'csv' => 'text/csv; charset=utf-8',
     'json' => 'application/json; charset=utf-8',
     default => 'application/octet-stream',
 };

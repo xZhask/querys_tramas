@@ -39,14 +39,20 @@
 <section class="tarjeta">
     <h2>📄 Tramas</h2>
     <ul class="lista-descargas">
-        <?php foreach ($tramas as $t): ?>
+        <?php foreach ($tramas as $idx => $t): ?>
+            <?php $a = $analisis[$idx] ?? null; ?>
             <li>
                 <?= htmlspecialchars($t['nombre']) ?>
-                <?php if ($t['existe']): ?>
-                    <a class="boton-descarga" href="/aplicativo/public/descargar.php?periodo=<?= urlencode($periodo) ?>&grupo=tramas&archivo=<?= urlencode($t['nombre']) ?>">Descargar</a>
-                <?php else: ?>
-                    <span class="texto-atenuado">no generado</span>
-                <?php endif; ?>
+                <span>
+                    <?php if ($a !== null && $a['existe']): ?>
+                        <a class="boton-descarga-analisis" href="/aplicativo/public/descargar.php?periodo=<?= urlencode($periodo) ?>&grupo=analisis&archivo=<?= urlencode($a['nombre']) ?>" title="CSV con cabecera y columna Prestacion_ID, para análisis previo al armado — no es el archivo oficial de envío">Descargar CSV (análisis)</a>
+                    <?php endif; ?>
+                    <?php if ($t['existe']): ?>
+                        <a class="boton-descarga" href="/aplicativo/public/descargar.php?periodo=<?= urlencode($periodo) ?>&grupo=tramas&archivo=<?= urlencode($t['nombre']) ?>">Descargar</a>
+                    <?php else: ?>
+                        <span class="texto-atenuado">no generado</span>
+                    <?php endif; ?>
+                </span>
             </li>
         <?php endforeach; ?>
     </ul>

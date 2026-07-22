@@ -96,6 +96,8 @@ button, .boton-primario, .boton-secundario, .boton-descarga {
 .boton-secundario { background: var(--blanco); color: var(--azul-institucional); border-color: var(--azul-institucional); }
 .boton-secundario:hover { background: var(--gris-fondo); }
 .boton-descarga { background: var(--verde-fondo); color: var(--verde); border-color: var(--verde); font-size: 0.85rem; padding: 0.3rem 0.7rem; margin-left: 0.75rem; }
+.boton-descarga-analisis { background: var(--blanco); color: var(--azul-institucional); border-color: var(--azul-institucional); font-size: 0.85rem; padding: 0.3rem 0.7rem; }
+.boton-descarga-analisis:hover { background: var(--gris-fondo); }
 
 .aviso { padding: 0.6rem 0.9rem; border-radius: var(--radio); font-size: 0.88rem; margin: 0.5rem 0; }
 .aviso-verde { background: var(--verde-fondo); color: var(--verde); }

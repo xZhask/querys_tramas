@@ -512,6 +512,19 @@ def _conectar(dbname, host, port, user, password):
     return psycopg2.connect(f"dbname={dbname} user={user} password={password} host={host} port={port}")
 
 
+def _conn_params(lns_db_var=None, pg_db_var="PGDATABASE", default_dbname="db_cpt_junio26"):
+    # LNS_DB_* es lo que setea el aplicativo web (config/database.php) segun
+    # los selectores "Base CPT"/"Base SIGESAPOL" de la pantalla Generar;
+    # PG*/localhost:5432/postgres son el fallback historico de run_month.ps1
+    # para quien corre este script directo por consola.
+    host = os.environ.get("LNS_DB_HOST") or os.environ.get("PGHOST", "localhost")
+    port = os.environ.get("LNS_DB_PORT") or os.environ.get("PGPORT", "5432")
+    user = os.environ.get("LNS_DB_USER") or os.environ.get("PGUSER", "postgres")
+    password = os.environ.get("LNS_DB_PASSWORD") or os.environ.get("PGPASSWORD", "root")
+    dbname = (os.environ.get(lns_db_var) if lns_db_var else None) or os.environ.get(pg_db_var, default_dbname)
+    return dbname, host, port, user, password
+
+
 def check_a7_cobertura(year, month, period, infos_dir, skip):
     if skip:
         print(f"A7-cobertura [{period}]: SKIPPED (--skip-a7-db, no se verifico contra BD de origen)")
@@ -529,12 +542,8 @@ def check_a7_cobertura(year, month, period, infos_dir, skip):
         print(f"A7-cobertura [{period}]: FALLO - metricas.json no tiene 'volumenes_raw'")
         return False
 
-    host = os.environ.get("PGHOST", "localhost")
-    port = os.environ.get("PGPORT", "5432")
-    user = os.environ.get("PGUSER", "postgres")
-    password = os.environ.get("PGPASSWORD", "root")
-    cpt_dbname = os.environ.get("PGDATABASE", "db_cpt_junio26")
-    sig_dbname = os.environ.get("PGDATABASE_SIGESAPOL", "sigesapol_junio")
+    cpt_dbname, host, port, user, password = _conn_params("LNS_DB_CPT", "PGDATABASE", "db_cpt_junio26")
+    sig_dbname, _, _, _, _ = _conn_params("LNS_DB_SIGESAPOL", "PGDATABASE_SIGESAPOL", "sigesapol_junio")
 
     import datetime
     p_ini = datetime.date(year, month, 1)
@@ -910,11 +919,8 @@ def check_a3_control10(year, month, period, skip):
         print(f"A3-CONTROL10 [{period}]: SKIPPED (--skip-control10, no se verifico contra BD)")
         return True
 
-    import psycopg2
-    import os
-    dbname = os.environ.get("PGDATABASE", "db_cpt_junio26")
-    password = os.environ.get("PGPASSWORD", "root")
-    conn = psycopg2.connect(f"dbname={dbname} user=postgres password={password} host=localhost")
+    dbname, host, port, user, password = _conn_params("LNS_DB_CPT", "PGDATABASE", "db_cpt_junio26")
+    conn = _conectar(dbname, host, port, user, password)
     cur = conn.cursor()
     cur.execute("SELECT MIN(fecha_atencion), MAX(fecha_atencion) FROM temp_bdt_consulta_local;")
     min_d, max_d = cur.fetchone()

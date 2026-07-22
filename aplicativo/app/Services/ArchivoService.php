@@ -34,6 +34,26 @@ class ArchivoService
         return self::describirArchivos($dir, $archivos);
     }
 
+    /**
+     * CSV de análisis (con cabecera, BOM y columna Prestacion_ID) que
+     * generate_outputs_v2.py escribe en paralelo a cada trama oficial, uno
+     * a uno en el mismo orden que listarTramas() para que la vista pueda
+     * emparejarlos por índice.
+     *
+     * @return array<int,array{nombre:string,existe:bool,tamano:?int}>
+     */
+    public static function listarAnalisis(string $periodo): array
+    {
+        $archivos = [
+            'trama_consulta_externa_analisis.csv',
+            'trama_emergencia_analisis.csv',
+            'trama_hospitalizacion_analisis.csv',
+            'trama_farmacia_analisis.csv',
+        ];
+        $dir = self::carpetaExpediente($periodo) . '/04_ANALISIS';
+        return self::describirArchivos($dir, $archivos);
+    }
+
     public static function nombreAuditoria(string $periodo): string
     {
         return "02_AUDITORIA_{$periodo}.xlsx";
@@ -89,6 +109,14 @@ class ArchivoService
                 foreach (self::listarTramas($periodo) as $t) {
                     if ($t['nombre'] === $archivo && $t['existe']) {
                         return self::carpetaExpediente($periodo) . '/01_TRAMAS/' . $t['nombre'];
+                    }
+                }
+                return null;
+
+            case 'analisis':
+                foreach (self::listarAnalisis($periodo) as $a) {
+                    if ($a['nombre'] === $archivo && $a['existe']) {
+                        return self::carpetaExpediente($periodo) . '/04_ANALISIS/' . $a['nombre'];
                     }
                 }
                 return null;
