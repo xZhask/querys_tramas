@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import csv
 import argparse
 import datetime
 import psycopg2
@@ -109,22 +110,35 @@ def format_trama_val(val):
         return val.replace('\r', ' ').replace('\n', ' ')
     return str(val)
 
+def format_trama_col_val(col, val):
+    # Specific format for birth dates:
+    if col == 'sp_fecha_nacimiento' and isinstance(val, (datetime.date, datetime.datetime)):
+        return val.strftime('%d/%m/%Y')
+    return format_trama_val(val)
+
 def write_trama_file(filepath, rows, col_keys):
     # newline='' disables universal-newline translation: some field values
     # (diagnostic descriptions, etc.) carry stray embedded \r/\n characters,
     # and text-mode translation would otherwise mangle those on every write.
     with open(filepath, 'w', encoding='utf-8', newline='') as f:
         for r in rows:
-            line_parts = []
-            for col in col_keys:
-                val = r.get(col)
-                # Specific format for birth dates:
-                if col == 'sp_fecha_nacimiento' and isinstance(val, (datetime.date, datetime.datetime)):
-                    line_parts.append(val.strftime('%d/%m/%Y'))
-                else:
-                    line_parts.append(format_trama_val(val))
+            line_parts = [format_trama_col_val(col, r.get(col)) for col in col_keys]
             # Write line with trailing pipe
             f.write("|".join(line_parts) + "|\n")
+
+def write_trama_csv_analisis(filepath, rows, col_keys):
+    # CSV de ANALISIS, no el envio oficial STIPS (ese sigue siendo
+    # 01_TRAMAS/*.txt, sin cabecera, sin tocar). Este archivo es para
+    # comparar contra la data de la gestion anterior: mismos valores que
+    # la trama oficial, con cabecera real y columna Prestacion_ID vacia
+    # (se llena manualmente despues de la revision de auditoria, fuera de
+    # este pipeline). UTF-8 con BOM para que Excel muestre tildes/enes
+    # correctamente sin filas fantasma.
+    with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(list(col_keys) + ['Prestacion_ID'])
+        for r in rows:
+            w.writerow([format_trama_col_val(col, r.get(col)) for col in col_keys] + [''])
 
 def add_validation(ws, formula, cell_range):
     dv = DataValidation(type="list", formula1=formula, allow_blank=True)
@@ -605,8 +619,10 @@ def main():
     exp_dir = os.path.join("expedientes", period)
     tramas_dir = os.path.join(exp_dir, "01_TRAMAS")
     infos_dir = os.path.join(exp_dir, "03_INFORMATIVOS")
+    analisis_dir = os.path.join(exp_dir, "04_ANALISIS")
     os.makedirs(tramas_dir, exist_ok=True)
     os.makedirs(infos_dir, exist_ok=True)
+    os.makedirs(analisis_dir, exist_ok=True)
     
     # We get column keys from headers in SQL files
     cur.execute("SELECT * FROM temp_bdt_consulta_local LIMIT 0;")
@@ -632,6 +648,14 @@ def main():
     write_trama_file(os.path.join(tramas_dir, "trama_emergencia.txt"), final_emergencia, cols_emergencia)
     write_trama_file(os.path.join(tramas_dir, "trama_hospitalizacion.txt"), final_hospitalizacion, cols_hospitalizacion)
     write_trama_file(os.path.join(tramas_dir, "trama_farmacia.txt"), final_farmacia, cols_farmacia)
+
+    # CSV de analisis (cabecera real + Prestacion_ID vacia, UTF-8 con BOM) -
+    # NO es el envio oficial STIPS, es para comparar contra la data de la
+    # gestion anterior. Ver diccionario_tramas.md.
+    write_trama_csv_analisis(os.path.join(analisis_dir, "trama_consulta_externa_analisis.csv"), final_consulta, cols_consulta)
+    write_trama_csv_analisis(os.path.join(analisis_dir, "trama_emergencia_analisis.csv"), final_emergencia, cols_emergencia)
+    write_trama_csv_analisis(os.path.join(analisis_dir, "trama_hospitalizacion_analisis.csv"), final_hospitalizacion, cols_hospitalizacion)
+    write_trama_csv_analisis(os.path.join(analisis_dir, "trama_farmacia_analisis.csv"), final_farmacia, cols_farmacia)
     
     print("Clean tramas successfully written.")
 

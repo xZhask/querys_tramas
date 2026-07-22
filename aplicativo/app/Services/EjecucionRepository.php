@@ -50,6 +50,50 @@ class EjecucionRepository
         return $row ?: null;
     }
 
+    /**
+     * Libera automáticamente un candado 'en_curso' que lleva más de
+     * $segundosInactividad sin avance (proceso abandonado: el navegador se
+     * cerró, Apache mató el worker, etc.). Se llama tanto al renderizar la
+     * pantalla Generar como al intentar iniciar una nueva ejecución, para
+     * que el botón no quede deshabilitado indefinidamente por un candado
+     * huérfano.
+     *
+     * La comparación de inactividad se calcula EN POSTGRES (EXTRACT(EPOCH
+     * FROM now() - actualizado_en)), no con time()/strtotime() en PHP: la
+     * columna es 'timestamp without time zone' y refleja la hora local de
+     * la sesión de Postgres (America/Bogota, UTC-5), mientras que PHP corre
+     * con date.timezone=UTC. Comparar strtotime($valor) contra time() da un
+     * desfase constante de 5 horas (18000s) y marcaba como abandonada
+     * cualquier ejecución recién creada.
+     *
+     * El umbral por defecto es alto (2 horas) a propósito: actualizado_en
+     * solo se refresca cuando UN PASO TERMINA (registrarPaso), no mientras
+     * corre, y un solo paso puede tardar minutos largos (paso 5 de
+     * setiembre tardó 942s = 15.7 min; meses con más volumen pueden tardar
+     * más). Con FcgidBusyTimeout ahora en 36000s, Apache tolera pasos aún
+     * más largos. Un umbral corto liberaría el candado de una ejecución que
+     * SIGUE corriendo de verdad, permitiendo que otra arranque en paralelo
+     * y corrompa las mismas tablas temp_*. Esta función ahora se invoca en
+     * cada carga de la pantalla Generar (antes solo al pulsar el botón), así
+     * que el margen de seguridad debe ser generoso; para el caso de un
+     * candado reciente que el usuario SABE que ya no sigue corriendo, se usa
+     * el botón manual "Detener y reiniciar" (acción 'liberar'), que no
+     * depende de este umbral.
+     */
+    public function liberarSiAbandonada(int $segundosInactividad = 7200): void
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT id, EXTRACT(EPOCH FROM (now() - actualizado_en)) AS segundos_inactivo
+             FROM app_ejecuciones WHERE estado = 'en_curso'
+             ORDER BY iniciado_en DESC LIMIT 1"
+        );
+        $stmt->execute();
+        $row = $stmt->fetch();
+        if ($row !== null && (float) $row['segundos_inactivo'] > $segundosInactividad) {
+            $this->finalizar((int) $row['id'], 'fallido');
+        }
+    }
+
     public function obtenerUltimaCompletada(string $periodo, string $tipo = 'generacion'): ?array
     {
         $stmt = $this->pdo->prepare(
@@ -119,27 +163,6 @@ class EjecucionRepository
             "UPDATE app_ejecuciones SET estado = :estado, actualizado_en = now() WHERE id = :id"
         );
         $stmt->execute(['estado' => $estadoFinal, 'id' => $id]);
-    }
-
-    /**
-     * True si, para el período dado, algún paso >= $desdePaso ya corrió
-     * 'completado' en la última ejecución 'generacion' completada. Se usa
-     * para bloquear el re-disparo accidental de los pasos de una sola pasada
-     * (6/7/8) al presionar "Generar tramas" sobre un período ya procesado.
-     */
-    public function tieneAvanceDesde(string $periodo, int $desdePaso): bool
-    {
-        $ultima = $this->obtenerUltimaCompletada($periodo, 'generacion');
-        if ($ultima === null) {
-            return false;
-        }
-        $log = json_decode($ultima['log'], true) ?: [];
-        foreach ($log as $entrada) {
-            if (($entrada['paso'] ?? 0) >= $desdePaso && ($entrada['estado'] ?? '') === 'completado') {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**

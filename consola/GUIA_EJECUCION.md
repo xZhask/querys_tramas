@@ -141,6 +141,31 @@ El archivo **`CONSULTAS_OBSERVACION.sql`** provee los queries directos (SELECTs)
 2. **DUPLICADOS FUENTES/ORIGEN:** Agrupación emulada SQL para observar choques por paciente/fecha/código y discriminador.
 3. **TRANSFERENCIAS HUÉRFANAS:** Visión de altas con condición 3 sin hospitalización de destino.
 
+### Exportar estos queries a CSV para Excel
+
+Estas consultas (y cualquier otro export tabular de auditoría — observaciones,
+duplicados, informativos) **no son las tramas oficiales** (`01_TRAMAS/*.txt`,
+formato STIPS sin cabecera — esas nunca se tocan, ver `diccionario_tramas.md`
+para su referencia de columnas). Para estas sí:
+
+1. Exportar con `\copy (...) TO '<archivo.csv>' WITH (FORMAT csv, HEADER
+   true)` — nunca con la salida alineada de `psql` redirigida a archivo
+   (`\o archivo.csv` con `\pset format aligned` por defecto). La salida
+   alineada mete caracteres de dibujo de tabla y separadores que Excel
+   interpreta mal: de ahí salían los caracteres raros y las "filas
+   fantasma" en la vista de filtro.
+2. Guardar el `.csv` en UTF-8 **con BOM** para que Excel muestre tildes y
+   ñ correctamente — es el mismo BOM que se retiró de los `.sql` (ver
+   CONTEXTO_CANONICO.md), pero ahí sobraba y aquí Excel lo necesita.
+   `\copy` con `psql` conectado con `client_encoding=UTF8` no agrega BOM
+   por sí solo; si Excel sigue mostrando tildes mal, abrir el CSV con un
+   editor de texto y guardarlo como "UTF-8 con BOM", o generarlo con un
+   script (Python/PHP) que escriba explícitamente el BOM al inicio.
+3. El libro de auditoría (`02_AUDITORIA_<periodo>.xlsx`) ya lleva
+   encabezados reales en las 5 pestañas (verificado en los 6 períodos de
+   este semestre) — no aplica este punto, el `.xlsx` no tiene el problema
+   de BOM/aligned porque no es texto plano.
+
 ---
 
 ## 5. PASO 12 — REINCORPORACIÓN DE DECISIONES DE AUDITORÍA MÉDICA

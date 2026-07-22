@@ -1,6 +1,7 @@
 tramas_exportadas/
 bases_extraidas_sigesapol_cpt/
 expedientes/
+_respaldos/
 *.zip
 __pycache__/
 *.pyc
@@ -12,3 +13,7 @@ _referencia_piloto_v2_*/
 # libros generados por el pipeline; esta regla cubre además cualquier hoja
 # de referencia que se suelte fuera de esa carpeta (p. ej. en la raíz).
 *.xlsx
+
+# _respaldos/ (arriba) son copias de expedientes/*/01_TRAMAS/*.txt previas a
+# regenerar un período — mismas tramas STIPS con PHI que expedientes/ ya
+# excluye, solo que respaldadas aparte. Nunca deben versionarse.

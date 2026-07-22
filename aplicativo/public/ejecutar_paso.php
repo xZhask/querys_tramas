@@ -28,6 +28,9 @@ switch ($accion) {
     case 'cancelar':
         manejarCancelar($cuerpo, $repo);
         break;
+    case 'liberar':
+        manejarLiberar($repo);
+        break;
     default:
         jsonSalida(['ok' => false, 'mensaje' => 'Acción no reconocida.'], 400);
 }
@@ -35,32 +38,19 @@ switch ($accion) {
 function manejarIniciar(array $cuerpo, EjecucionRepository $repo): void
 {
     $periodo = (string) ($cuerpo['periodo'] ?? '');
-    if (!ArchivoService::periodoValido($periodo)) {
-        jsonSalida(['ok' => false, 'mensaje' => 'Período inválido.']);
+    $maxPeriodo = DatabaseService::obtenerUltimoMesCerrado();
+    if (!ArchivoService::periodoValido($periodo) || $periodo > $maxPeriodo) {
+        jsonSalida(['ok' => false, 'mensaje' => "Período inválido o no cerrado (máximo permitido: {$maxPeriodo})."]);
     }
 
     // Libera candados de ejecuciones abandonadas (> 15 min sin avance).
+    $repo->liberarSiAbandonada();
     $enCurso = $repo->hayEnCurso();
-    if ($enCurso !== null) {
-        $inactivoSegundos = time() - strtotime($enCurso['actualizado_en']);
-        if ($inactivoSegundos > 900) {
-            $repo->finalizar((int) $enCurso['id'], 'fallido');
-            $enCurso = null;
-        }
-    }
     if ($enCurso !== null) {
         jsonSalida(['ok' => false, 'mensaje' => "Ya hay una ejecución en curso (período {$enCurso['periodo']}). Espere a que termine antes de iniciar otra."]);
     }
 
     $forzarDesdePaso = isset($cuerpo['forzar_desde_paso']) ? (int) $cuerpo['forzar_desde_paso'] : null;
-
-    if ($forzarDesdePaso === null && $repo->tieneAvanceDesde($periodo, 6)) {
-        jsonSalida([
-            'ok' => false,
-            'requiere_confirmacion' => true,
-            'mensaje' => "El período {$periodo} ya tiene pasos ejecutados. Por favor, use los botones 'Reiniciar ciclo completo' o 'Reiniciar desde paso 5' que aparecen arriba.",
-        ]);
-    }
 
     $pasoInicial = ($forzarDesdePaso === 5) ? 4 : 0;
     $id = $repo->crear($periodo, 'generacion', usuarioLocal(), $pasoInicial, $cuerpo['db_cpt'] ?? null, $cuerpo['db_sigesapol'] ?? null);
@@ -135,5 +125,20 @@ function manejarCancelar(array $cuerpo, EjecucionRepository $repo): void
 {
     $ejecucionId = (int) ($cuerpo['ejecucion_id'] ?? 0);
     $repo->finalizar($ejecucionId, 'fallido');
+    jsonSalida(['ok' => true]);
+}
+
+/**
+ * Liberación manual del candado global 'en_curso', sin esperar el umbral
+ * de abandono de 15 minutos. Para cuando el usuario sabe que el proceso
+ * ya no sigue corriendo (navegador cerrado, Apache reiniciado, etc.) y
+ * quiere volver a habilitar los controles de inmediato.
+ */
+function manejarLiberar(EjecucionRepository $repo): void
+{
+    $enCurso = $repo->hayEnCurso();
+    if ($enCurso !== null) {
+        $repo->finalizar((int) $enCurso['id'], 'fallido');
+    }
     jsonSalida(['ok' => true]);
 }

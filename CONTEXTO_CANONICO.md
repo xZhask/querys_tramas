@@ -717,6 +717,184 @@
   - Espejo `consola/4_06_FASE2_SIGESAPOL_procedimientos.sql` regenerado
     (copia exacta, diff 0).
 
+- **2026-07-21 — Rollout v3.4 (parte 2): PARCHE D aplicado a esta máquina,
+  jul-dic regenerados, dos hallazgos nuevos — CIERRE v3.4 EN PAUSA**:
+  1. **Discrepancia de entorno detectada al retomar la misión**: esta
+     máquina no es la que verificó PARCHE D+E (entrada anterior) —
+     `expedientes/` está en `.gitignore` y la BD Postgres es local a cada
+     máquina, ninguno de los dos sincroniza por git. Confirmado en vivo con
+     `pg_get_functiondef`: la BD CPT local (`db_cpt_junio26`) NO tenía
+     PARCHE D aplicado; los `expedientes/2025-07..09/` en disco traían
+     cifras pre-parche. Aplicado `01_PARCHES_funciones.sql` (idempotente,
+     vía `aplicativo/cli_aplicar_parches.php`, nuevo) y regenerados
+     julio/agosto/septiembre — julio cierra con cifras **idénticas** a las
+     que esta sección ya declaraba verificadas (76,551/25,030/222,089/
+     85,507), confirmando que el parche funciona igual en cualquier
+     entorno. Carpetas de respaldo viejas (`2025-07_v3.0_backup`,
+     `2025-08_ANTES_ALCANCE_MULTI_IPRESS`) movidas de `expedientes/` a
+     `_respaldos/` — A8 las escaneaba como si fueran períodos reales
+     (falso positivo estructural, `14_VERIFICAR_ASERTOS.py` líneas 655-658
+     no filtra por patrón `^\d{4}-\d{2}$`).
+  2. **Octubre-diciembre regenerados con PARCHE D+E** (primera vez que
+     PARCHE E opera sobre la rama canónica SIGESAPOL, no solo como
+     complemento — regla §1.1). A1-A7 en PASS los 6 meses. Split
+     CPT/SIGESAPOL de octubre revisado con cuidado (pedido explícito):
+     laboratorio queda 99.7%/99.97% CPT en consulta/hospitalización pero
+     solo 4% CPT en emergencia — verificado contra `prestaciones` cruda de
+     SIGESAPOL sin ningún filtro del pipeline, es patrón real de adopción
+     institucional (SIGESAPOL aún no captura laboratorio de consulta/
+     hospitalización), no un bug.
+  3. **HALLAZGO nuevo — duplicación CONSULTA vs ESTANCIA en transferencia**
+     (`HALLAZGO_SIGESAPOL_consulta_vs_estancia.md`): SIGESAPOL registra el
+     mismo código+cantidad dos veces en el instante de transferencia
+     Emergencia→Hospitalización — una vez como CONSULTA (sin ventana,
+     factura por calendario) y otra vez en el paquete real de la estancia.
+     Cuantificado jul-oct: 255 filas, ~S/. 4,967.69 nominal, de las cuales
+     95 filas / S/. 1,780.14 cruzan efectivamente de período. Pendiente de
+     decisión de Auditoría Médica; no bloquea el cierre (monto menor,
+     acotado).
+  4. **HALLAZGO nuevo — frontera CPT/SIGESAPOL truncada, RECURRENTE**
+     (`HALLAZGO_frontera_CPT_SIGESAPOL_septiembre_octubre.md`): CPT sigue
+     recibiendo datos fragmentarios e intermitentes de algunas
+     hospitalizaciones varios meses después de que SIGESAPOL se volvió
+     canónico (regla §1.1) — no es un evento único de la fecha de corte.
+     Cuando el último dato que CPT tiene de una estancia es anterior a su
+     alta real, CPT factura esa porción en el mes anterior (información
+     incompleta, correcta desde su propia vista) y SIGESAPOL factura la
+     estancia completa en el mes del alta real (correcto también) — doble
+     cobro genuino. Verificado con el método real (cruce contra tramas ya
+     exportadas, no el heurístico SQL inicial que sobreestimó 30x)
+     en las 3 fronteras del semestre:
+
+     | Frontera | Hospitalización S/. | Emergencia S/. |
+     | --- | --- | --- |
+     | sep→oct | 79,387.74 | 0.00 |
+     | oct→nov | 94,748.68 | 0.00 |
+     | nov→dic | 63,964.07 | 0.00 |
+     | **TOTAL** | **238,100.49** (22 estancias, 2,949 filas) | **0.00** |
+
+     70% de ese monto (S/. 167,669.40) es invisible para A8 (mismo
+     documento+fecha, código distinto entre los dos envíos — dos sistemas
+     codificaron el mismo episodio de forma diferente). Exclusivo de
+     hospitalización, cero riesgo confirmado en emergencia las 3 veces.
+
+     **Actualización 2026-07-22 — cifra techo (todos-contra-todos)**:
+     S/. 238,100.49 era un piso (solo verificaba cada mes contra el
+     inmediatamente anterior). Se cerró el límite con un cruce de cada
+     estancia con alta oct/nov/dic contra las 6 tramas de hospitalización
+     ya exportadas (jul-dic), no solo la anterior — mismo método de
+     clasificación visible/invisible, verificado exacto contra el control
+     de una sola frontera (sep→oct reproduce 1,219 filas / S/. 79,387.74
+     sin cambios). Resultado, por mes de alta:
+
+     | Alta en | Documentos | Filas | Monto S/. |
+     | --- | --- | --- | --- |
+     | octubre | 6 | 1,219 | 79,387.74 |
+     | noviembre | 9 | 1,488 | 133,039.33 |
+     | diciembre | 10 | 1,088 | 122,057.26 |
+     | **TOTAL hospitalización (techo)** | **25** | **3,795** | **S/. 334,484.33** |
+
+     Emergencias: riesgo real CERO confirmado también con el cruce
+     todos-contra-todos (universo de 28,155 estancias oct-dic revisado).
+     **S/. 334,484.33 es la cifra techo — S/. 96,383.84 más que el piso**
+     (+40.5%), de los cuales S/. 45,938.70 (404 filas) corresponden al
+     caso de 3 fronteras (ingreso julio, alta diciembre) ya señalado como
+     límite conocido, y S/. 10,781.85 (49 filas) a un caso nuevo de 4
+     fronteras no visible en ningún log de A8 anterior (A8 solo compara
+     contra los períodos que ya existían en `expedientes/` al momento de
+     correrlo). Detalle en `HALLAZGO_frontera_CPT_SIGESAPOL_septiembre_
+     octubre.md` §3.6. El cierre v3.4 sigue en pausa (punto 5) — la cifra
+     techo no depende de la decisión de Auditoría Médica sobre el
+     tratamiento, solo cierra la brecha metodológica de cuantificación.
+  5. **CIERRE v3.4 EN PAUSA**: no se recalculó §2/§3 de esta sección con
+     los 6 meses, no se reemitió `INFORME_CIERRE_SEMESTRE.md`, no se
+     sincronizó `consola/GUIA_EJECUCION.md`, no hay tag `v3.4` ni push —
+     decisión explícita del usuario: el cierre espera a que Auditoría
+     Médica decida el tratamiento de la frontera (punto 4) antes de emitir
+     números que podrían cambiar según esa decisión. Los 6 meses SÍ están
+     regenerados y verificados (A1-A7 PASS, A8 con todo overlap
+     clasificado contra alguno de los 3 hallazgos documentados — ninguno
+     sin explicar).
+
+- **2026-07-22 — CSV de análisis por trama (`04_ANALISIS/`) + fix de "Generar
+  tramas" + `FcgidBusyTimeout`**:
+  1. `generate_outputs_v2.py` ahora escribe, además de las 4 tramas oficiales
+     en `01_TRAMAS/*.txt` (sin cabecera, formato STIPS, sin cambios), una
+     copia CSV de cada una en `04_ANALISIS/` — cabecera real, UTF-8 con BOM,
+     columna `Prestacion_ID` vacía para llenado manual posterior. Uso: solo
+     análisis/comparación (p.ej. contra `TRAMA JUNIO 2025 VERSION FINAL_v2.xlsx`
+     de la gestión anterior), nunca envío. Detalle en `diccionario_tramas.md`.
+  2. Bug corregido en la pantalla "Generar tramas" del aplicativo: al
+     confirmar el modal de sobrescritura, el backend (`ejecutar_paso.php`)
+     caía en una guarda vieja que pedía botones ya eliminados por el
+     rediseño ("Reiniciar ciclo completo" / "Reiniciar desde paso 5") y
+     bloqueaba con un `alert()`. Corregido: la confirmación del modal ahora
+     dispara directamente el ciclo completo (paso 1), la guarda vieja y el
+     método `EjecucionRepository::tieneAvanceDesde()` que ya no se usa
+     fueron eliminados. "Reanudar desde el paso 5" (Opciones avanzadas)
+     queda como el único lugar del arranque en paso 5, sin cambios.
+  3. Al verificar el fix en vivo (HTTP real, no CLI) contra 2025-09 se
+     encontró un problema de infraestructura no relacionado: el paso 5
+     (~950s sin salida intermedia) se cortaba a los ~500s con respuesta
+     vacía. Causa: `FcgidBusyTimeout` de mod_fcgid (Apache/Laragon) nunca se
+     había fijado, quedaba en el default de 300s — `FcgidIOTimeout` ya
+     estaba en 36000s pero esa directiva no cubre este caso (solo el tiempo
+     entre lecturas/escrituras de socket, no el total de un proceso
+     ocupado sin flush). Corregido en `C:\laragon\etc\apache2\fcgid.conf`
+     (`FcgidBusyTimeout 36000`, mismo margen). Este problema es anterior al
+     fix del punto 2 y nunca se había visto porque todas las regeneraciones
+     reales del semestre se hicieron por `cli_run_period.php` (sin límite
+     de tiempo de request) — es la primera vez que el paso 5 se ejercita
+     de punta a punta vía HTTP real. **Confirmado tras el reinicio de
+     Apache**: el usuario regeneró septiembre completo desde el aplicativo
+     (paso 1-10 OK, sin cortes) — ambos fixes (punto 2 y este) verificados
+     en producción.
+  4. **Investigación de los 281 overlaps de A8 en la regeneración de
+     septiembre** (pedido del usuario: A8 no debe bloquear por hallazgos ya
+     gestionados — clasificar conocido vs. nuevo). Resultado: **cero
+     patrones nuevos** — las 281 se explican 100% por los dos hallazgos ya
+     documentados (268 = frontera CPT/SIGESAPOL hospitalización; 13 =
+     `HALLAZGO_SIGESAPOL_consulta_vs_estancia.md`, coincide exacto con su
+     fila de septiembre ya cuantificada desde el 2026-07-21). Dos hipótesis
+     de patrones nuevos (emergencia cruzando de período; CPT con estancia
+     divergente sin migración de por medio) se descartaron al verificar
+     contra la trama exportada directamente — eran artefactos de una
+     búsqueda por BD cruda que no reflejaba la ventana extendida por unión
+     E→H, no fenómenos reales. Esa misma corrección de metodología
+     (ventana de estancia = la que calcula la trama, no la tabla cruda)
+     también corrigió el techo de §3: **S/. 334,484.33 → S/. 335,783.97**
+     (+S/. 1,299.64, un caso adicional con alta en noviembre). Detalle en
+     `HALLAZGO_frontera_CPT_SIGESAPOL_septiembre_octubre.md` §3.7.
+  5. **A8 implementado con clasificación conocido/nuevo** (pedido explícito
+     del usuario, mismo criterio del punto 4): `14_VERIFICAR_ASERTOS.py`
+     ahora distingue overlaps CONOCIDO (superficie `frontera` — ventana de
+     estancia calculada desde la trama, no la tabla cruda; superficie
+     `consulta_estancia` — `HALLAZGO_SIGESAPOL_consulta_vs_estancia.md`) de
+     NUEVO, y solo falla ante NUEVO. Escribe
+     `overlaps_conocidos_<periodo>.csv` en `03_INFORMATIVOS/` para
+     trazabilidad — el monto sigue contabilizado, no desaparece. Corregido
+     en el camino un bug propio (truncar `sp_fecha_atencion` a solo fecha
+     colapsaba visitas de emergencia distintas del mismo día — esa trama
+     trae hora:minuto:segundo — e inflaba 29→379 los overlaps contra
+     agosto; detectado al no reproducir el conteo original y corregido
+     antes de confiar en el resultado). **Verificado en los 6 meses del
+     semestre: PASS con 0 overlaps nuevos en todos** (jul=26, ago=58,
+     sep=281, oct=426, nov=405, dic=176 conocido-explicado).
+  6. **`HALLAZGO_SIGESAPOL_consulta_vs_estancia.md` — Variante A cerrada
+     jun-dic, Variante B queda como pregunta abierta, no como cifra**.
+     Variante A (CONSULTA duplica la estancia) se amplió a noviembre-
+     diciembre anclando el match al evento de transferencia E→H verificado
+     (sin ese anclaje el query sobreestimaba 10-50×) — certificado
+     reproduciendo julio antes de aplicar a nov-dic (42 esperado vs. 50
+     obtenido, mismo orden de magnitud). Variante B (la emergencia duplica
+     la hospitalización) no se pudo reproducir con dos anclajes distintos
+     probados (±1 día de la transferencia: 316 filas en julio vs. 35
+     esperado; rango de la hospitalización específica: 340, peor aún) —
+     ninguno pasa el certificado, así que **no se escribió cifra**. Queda
+     documentado en `HALLAZGO_SIGESAPOL_consulta_vs_estancia.md` §3.2 como
+     pregunta abierta para que Auditoría Médica defina el criterio clínico
+     del duplicado antes de intentar un tercer query.
+
 ---
 
 ## 4. REGLA DE ENTRADA DE NÚMEROS A INFORMES

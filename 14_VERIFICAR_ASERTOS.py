@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import csv
 import argparse
 import subprocess
 import openpyxl
@@ -622,17 +623,127 @@ def check_a7_cobertura(year, month, period, infos_dir, skip):
 # correr en cada cierre de periodo, una vez que existan periodos previos.
 # ============================================================================
 
-def _claves_periodo(tramas_dir, cols_por_tipo):
-    archivos = {
-        "consulta": ("trama_consulta_externa.txt", ["sp_numero_documento_paciente", "sp_fecha_atencion", "sp_codigo_procedimiento"]),
-        "emergencia": ("trama_emergencia.txt", ["sp_numero_documento_paciente", "sp_fecha_atencion", "sp_codigo_procedimiento"]),
-        "hospitalizacion": ("trama_hospitalizacion.txt", ["sp_numero_documento_paciente", "sp_fecha_atencion", "sp_codigo_procedimiento"]),
-    }
-    claves = set()
-    for tipo, (fname, key_names) in archivos.items():
+_ARCHIVOS_TRAMA_A8 = {
+    "consulta": "trama_consulta_externa.txt",
+    "emergencia": "trama_emergencia.txt",
+    "hospitalizacion": "trama_hospitalizacion.txt",
+}
+_MARCADOR_ESTANCIA_A8 = {
+    "emergencia": "estancia en emergencia",
+    "hospitalizacion": "estancia hospitalaria",
+}
+
+
+def _leer_trama_clasificacion(tramas_dir, cols_por_tipo):
+    """
+    Lee las 3 tramas de un periodo y devuelve:
+      - filas_por_doc: doc -> lista de (fecha_completa, codigo, tipo) de
+        TODAS las filas. `fecha_completa` se deja TAL CUAL viene en la
+        trama (sin truncar) - es la misma clave que usa `load_trama_keys`/
+        A8 original para detectar el overlap; truncar a solo fecha aqui
+        colapsaba visitas de emergencia distintas del mismo dia (esa trama
+        SI trae hora:minuto:segundo) y disparaba falsos overlaps (29->379
+        en la verificacion contra septiembre 2025).
+      - ventanas_por_doc: doc -> lista de (ingreso, alta) EN SOLO FECHA
+        (para comparar contra ventanas se usa solo granularidad de dia) de
+        las estancias (hospitalizacion o emergencia) tal como las calcula
+        la propia trama YA EXPORTADA (incluye la ventana extendida por el
+        Caso A / union Emergencia->Hospitalizacion). NO se consulta la
+        tabla cruda de la BD: esa no refleja la union E->H y produce falsos
+        "nuevo" (ver HALLAZGO_frontera_CPT_SIGESAPOL_septiembre_octubre.md
+        §3.7).
+    """
+    filas_por_doc = {}
+    ventanas_por_doc = {}
+    for tipo, fname in _ARCHIVOS_TRAMA_A8.items():
         cols = cols_por_tipo.get(tipo, [])
-        claves |= load_trama_keys(os.path.join(tramas_dir, fname), cols, key_names)
+        if "base" not in cols:
+            continue
+        try:
+            i_base = cols.index("base")
+            i_doc = cols.index("sp_numero_documento_paciente")
+            i_fecha = cols.index("sp_fecha_atencion")
+            i_cod = cols.index("sp_codigo_procedimiento")
+        except ValueError:
+            continue
+        i_alta = cols.index("sp_fecha_alta") if "sp_fecha_alta" in cols else None
+        path = os.path.join(tramas_dir, fname)
+        if not os.path.exists(path):
+            continue
+        marker = _MARCADOR_ESTANCIA_A8.get(tipo)
+        indices = [i for i in (i_base, i_doc, i_fecha, i_cod, i_alta) if i is not None]
+        maxi = max(indices)
+        with open(path, "rb") as f:
+            data = f.read().decode("utf-8")
+        sep = "|\r\n" if "|\r\n" in data else "|\n"
+        for rec in data.split(sep):
+            if not rec.strip():
+                continue
+            parts = rec.split("|")
+            if len(parts) <= maxi:
+                continue
+            doc = parts[i_doc].strip()
+            fecha_completa = parts[i_fecha].strip()
+            cod = parts[i_cod].strip()
+            base = parts[i_base].strip()
+            filas_por_doc.setdefault(doc, []).append((fecha_completa, cod, tipo))
+            if marker and base == marker and i_alta is not None:
+                ingreso = fecha_completa[:10]
+                alta = parts[i_alta].strip()[:10]
+                ventanas_por_doc.setdefault(doc, []).append((ingreso, alta))
+    return filas_por_doc, ventanas_por_doc
+
+
+def _claves_desde_filas(filas_por_doc):
+    claves = set()
+    for doc, filas in filas_por_doc.items():
+        for (fecha, cod, _tipo) in filas:
+            claves.add((doc, fecha, cod))
     return claves
+
+
+def _tipos_de(filas_por_doc, doc, fecha, cod):
+    return {t for (f, c, t) in filas_por_doc.get(doc, []) if f == fecha and c == cod}
+
+
+def _clasificar_overlap_a8(doc, fecha, tipos_actual, tipos_otro, ventanas_globales):
+    """
+    Superficie (a) "frontera": la fecha cae dentro de la ventana [ingreso,
+    alta] de una estancia (hospitalizacion o emergencia) cuyo mes de alta es
+    distinto al mes propio de la fecha - arrastre por regla inmutable 11 /
+    PARCHE D-E. La ventana se busca en el indice GLOBAL (todos los periodos
+    ya generados), no solo en los dos periodos comparados, para cubrir
+    tambien estancias que saltan mas de una frontera.
+    Superficie (b) "consulta_estancia": un lado del overlap es una fila de
+    la trama de CONSULTA y el otro es de hospitalizacion o emergencia -
+    HALLAZGO_SIGESAPOL_consulta_vs_estancia.md (duplicado en el instante de
+    transferencia E->H).
+    Las dos superficies NO son mutuamente excluyentes: un registro fechado
+    justo el dia de ingreso puede calzar con ambas a la vez (el arrastre y
+    el duplicado de transferencia son fenomenos independientes que a veces
+    coinciden en la misma fila). Por eso se devuelve el conjunto de
+    superficies que calzaron (puede tener 1 o 2 elementos), no una sola
+    etiqueta forzada - la clasificacion es para trazabilidad/reporte, no
+    cambia PASS/FALLO (cualquier superficie que calce ya es conocido).
+    Devuelve un set: subconjunto de {'frontera', 'consulta_estancia'},
+    vacio si no calza ninguna (NUEVO).
+    `fecha` puede venir con hora (emergencia) - la comparacion de ventana
+    usa solo los primeros 10 caracteres (fecha), igual que las ventanas.
+    """
+    superficies = set()
+
+    tipos = tipos_actual | tipos_otro
+    if "consulta" in tipos and tipos & {"hospitalizacion", "emergencia"}:
+        superficies.add("consulta_estancia")
+
+    fecha_dia = fecha[:10]
+    fecha_periodo = fecha_dia[:7]
+    for (ingreso, alta) in ventanas_globales.get(doc, []):
+        if ingreso <= fecha_dia <= alta and alta[:7] != fecha_periodo:
+            superficies.add("frontera")
+            break
+
+    return superficies
 
 
 def check_a8_no_duplicacion(year, month, period):
@@ -646,7 +757,8 @@ def check_a8_no_duplicacion(year, month, period):
         return False
     with open(cols_path, "r", encoding="utf-8") as f:
         cols_actual = json.load(f)
-    claves_actual = _claves_periodo(tramas_dir, cols_actual)
+    filas_actual, ventanas_actual = _leer_trama_clasificacion(tramas_dir, cols_actual)
+    claves_actual = _claves_desde_filas(filas_actual)
 
     if not os.path.isdir(exp_root):
         print(f"A8-no-duplicacion [{period}]: FALLO - no existe la carpeta {exp_root}")
@@ -661,22 +773,60 @@ def check_a8_no_duplicacion(year, month, period):
         print(f"A8-no-duplicacion [{period}]: PASS trivial (no hay otros periodos generados aun para comparar)")
         return True
 
-    ok = True
+    # Cargar filas/ventanas de todos los otros periodos una sola vez, y
+    # construir el indice GLOBAL de ventanas de estancia (periodo actual +
+    # todos los otros) - necesario para clasificar arrastres que saltan mas
+    # de una frontera (la estancia puede no tener su fila "estancia
+    # hospitalaria" ni en el periodo actual ni en el "otro" comparado, sino
+    # en un tercer periodo donde de verdad se factura).
+    filas_por_periodo = {period: filas_actual}
+    ventanas_globales = {}
+    for doc, vents in ventanas_actual.items():
+        ventanas_globales.setdefault(doc, []).extend(vents)
     for otro in otros_periodos:
         otro_infos = os.path.join(exp_root, otro, "03_INFORMATIVOS")
         otro_tramas = os.path.join(exp_root, otro, "01_TRAMAS")
         with open(os.path.join(otro_infos, ".trama_columns.json"), "r", encoding="utf-8") as f:
             cols_otro = json.load(f)
-        claves_otro = _claves_periodo(otro_tramas, cols_otro)
-        repetidas = claves_actual & claves_otro
-        if repetidas:
-            ejemplo = sorted(repetidas)[:5]
-            print(f"A8-no-duplicacion [{period}]: FALLO - {len(repetidas)} prestaciones de {period} tambien aparecen en las tramas de {otro} (doble cobro entre envios). Ejemplos: {ejemplo}")
-            ok = False
+        filas_otro, ventanas_otro = _leer_trama_clasificacion(otro_tramas, cols_otro)
+        filas_por_periodo[otro] = filas_otro
+        for doc, vents in ventanas_otro.items():
+            ventanas_globales.setdefault(doc, []).extend(vents)
 
-    if ok:
-        print(f"A8-no-duplicacion [{period}]: PASS (cero prestaciones compartidas con {len(otros_periodos)} periodo(s) previamente generado(s): {otros_periodos})")
-    return ok
+    conocidos = []
+    nuevos = []
+    for otro in otros_periodos:
+        filas_otro = filas_por_periodo[otro]
+        claves_otro = _claves_desde_filas(filas_otro)
+        repetidas = claves_actual & claves_otro
+        for (doc, fecha, cod) in repetidas:
+            tipos_actual = _tipos_de(filas_actual, doc, fecha, cod)
+            tipos_otro = _tipos_de(filas_otro, doc, fecha, cod)
+            superficies = _clasificar_overlap_a8(doc, fecha, tipos_actual, tipos_otro, ventanas_globales)
+            if not superficies:
+                nuevos.append((doc, fecha, cod, otro))
+            else:
+                conocidos.append((doc, fecha, cod, otro, ",".join(sorted(superficies))))
+
+    if conocidos:
+        ruta_csv = os.path.join(infos_dir, f"overlaps_conocidos_{period}.csv")
+        with open(ruta_csv, "w", newline="", encoding="utf-8-sig") as f:
+            w = csv.writer(f)
+            w.writerow(["documento", "fecha", "codigo", "periodo_comparado", "clasificacion"])
+            for row in sorted(conocidos):
+                w.writerow(row)
+        print(f"A8-no-duplicacion [{period}]: {len(conocidos)} prestaciones compartidas con otros periodos, "
+              f"todas conocido-explicado (frontera CPT/SIGESAPOL o consulta-vs-estancia) - detalle en {ruta_csv}")
+
+    if nuevos:
+        ejemplo = sorted(nuevos)[:5]
+        print(f"A8-no-duplicacion [{period}]: FALLO - {len(nuevos)} prestaciones compartidas con otros periodos "
+              f"SIN explicacion conocida (ni frontera CPT/SIGESAPOL ni consulta-vs-estancia). Ejemplos: {ejemplo}")
+        return False
+
+    print(f"A8-no-duplicacion [{period}]: PASS ({len(conocidos)} conocido-explicado, 0 nuevo, "
+          f"comparado contra {len(otros_periodos)} periodo(s): {otros_periodos})")
+    return True
 
 
 
