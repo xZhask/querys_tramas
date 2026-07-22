@@ -12,10 +12,16 @@ def parse_args():
     return parser.parse_args()
 
 def connect_db():
-    import os
-    dbname = os.environ.get("PGDATABASE", "db_cpt_junio26")
-    password = os.environ.get("PGPASSWORD", "root")
-    return psycopg2.connect(f"dbname={dbname} user=postgres password={password} host=localhost")
+    # LNS_DB_* es lo que setea el aplicativo web (config/database.php) segun
+    # los selectores "Base CPT"/"Base SIGESAPOL" de la pantalla Generar;
+    # PG*/localhost:5432/postgres son el fallback historico de run_month.ps1
+    # para quien corre este script directo por consola.
+    host = os.environ.get("LNS_DB_HOST") or os.environ.get("PGHOST", "localhost")
+    port = os.environ.get("LNS_DB_PORT") or os.environ.get("PGPORT", "5432")
+    user = os.environ.get("LNS_DB_USER") or os.environ.get("PGUSER", "postgres")
+    password = os.environ.get("LNS_DB_PASSWORD") or os.environ.get("PGPASSWORD", "root")
+    dbname = os.environ.get("LNS_DB_CPT") or os.environ.get("PGDATABASE", "db_cpt_junio26")
+    return psycopg2.connect(f"dbname={dbname} user={user} password={password} host={host} port={port}")
 
 def parse_date(val):
     if val is None:
